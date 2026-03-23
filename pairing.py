@@ -34,11 +34,9 @@ def _validate_pairing_possible(
     females = [p for p in participants if p.gender == "female"]
 
     if mode == PairingMode.MIXED:
-        if len(males) != len(females):
-            raise SystemExit(
-                f"Error: mixed mode requires equal males and females, "
-                f"got {len(males)} males and {len(females)} females"
-            )
+        # Mixed creates as many M+F pairs as possible, then pairs leftovers.
+        # Only requirement: even total count (already checked above).
+        pass
     elif mode == PairingMode.MALE_ONLY:
         if len(males) < 2 or len(males) % 2 != 0:
             raise SystemExit(
@@ -76,7 +74,12 @@ def _try_mixed(males: list[Participant], females: list[Participant], rng: random
     f = list(females)
     rng.shuffle(m)
     rng.shuffle(f)
-    pairs = list(zip(m, f))
+    mixed_count = min(len(m), len(f))
+    pairs: list[tuple[Participant, Participant]] = list(zip(m[:mixed_count], f[:mixed_count]))
+    leftover = m[mixed_count:] + f[mixed_count:]
+    rng.shuffle(leftover)
+    for i in range(0, len(leftover), 2):
+        pairs.append((leftover[i], leftover[i + 1]))
     return _build_teams_from_pairs(pairs)
 
 

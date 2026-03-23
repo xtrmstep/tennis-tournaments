@@ -23,11 +23,12 @@ Elena,female,75
 
 **Required columns:** `name`, `gender`, `skill_percent`
 
-**Optional columns:** `weight` (positive number)
+**Optional columns:** `weight` (positive number), `pair` (positive integer)
 
 - `gender` must be `male` or `female`
 - `skill_percent` must be 0–100
 - participant count must be even (to form 2-person teams)
+- `pair` — participants sharing the same number are pre-assigned as a team (each number must appear exactly twice)
 
 ## Usage
 
@@ -68,10 +69,24 @@ python main.py --input participants.csv --output-dir out \
 | Mode | Rule |
 |---|---|
 | `random` | Any valid pairing |
-| `mixed` | Each team is male + female |
+| `mixed` | As many male+female pairs as possible; leftover same-gender participants are paired together |
 | `male_only` | Each team is male + male |
 | `female_only` | Each team is female + female |
 | `same_gender` | Teams are either male+male or female+female |
+
+## Pre-assigned pairs
+
+Add a `pair` column to the CSV to lock specific participants together:
+
+```csv
+name,gender,skill_percent,pair
+Alex,male,72,1
+Maria,female,68,1
+Ivan,male,61,
+Elena,female,75,
+```
+
+Alex and Maria will always be teamed (pair 1). Ivan and Elena go through normal pairing. Pre-assigned pairs bypass the pairing mode — a male+male fixed pair is allowed even in mixed mode.
 
 ## Court allocation
 

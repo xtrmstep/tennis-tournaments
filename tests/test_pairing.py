@@ -28,9 +28,16 @@ class TestMixedPairing:
             assert genders == {"male", "female"}
 
     def test_impossible_mixed_unequal(self) -> None:
+        """Unequal counts still work: max mixed pairs + leftover same-gender."""
         participants = _males(3) + _females(1)
-        with pytest.raises(SystemExit, match="equal males and females"):
-            generate_teams(participants, PairingMode.MIXED, seed=1)
+        teams = generate_teams(participants, PairingMode.MIXED, seed=1)
+        assert len(teams) == 2
+        # 1 mixed pair (1M + 1F) + 1 male-only pair (2M leftover)
+        genders_per_team = [
+            {t.player1.gender, t.player2.gender} for t in teams
+        ]
+        mixed_count = sum(1 for g in genders_per_team if g == {"male", "female"})
+        assert mixed_count == 1
 
 
 class TestMaleOnlyPairing:
