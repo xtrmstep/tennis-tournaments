@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from bracket import generate_group_bracket
 from grouping import create_groups, select_qualified_teams
 from models import Participant, Team
 
@@ -91,3 +92,39 @@ class TestSelectQualified:
         groups = create_groups(teams, group_size=2)
         with pytest.raises(SystemExit, match="exceeds"):
             select_qualified_teams(groups, qualified_per_group=5)
+
+
+class TestGroupBracket:
+    def test_uses_group_labels(self) -> None:
+        """Bracket for groups should use position labels, not team IDs."""
+        teams = _teams(8)
+        groups = create_groups(teams, group_size=4)
+        matches = generate_group_bracket(groups, qualified_per_group=2)
+        semis = [m for m in matches if m.round_name == "Semifinal"]
+        assert len(semis) == 2
+        # All team references should be group-position labels
+        all_labels = set()
+        for sf in semis:
+            all_labels.add(sf.team1)
+            all_labels.add(sf.team2)
+        for label in all_labels:
+            assert "Group" in label
+
+    def test_cross_group_matchups(self) -> None:
+        """Group winners should face runners-up from other groups."""
+        teams = _teams(8)
+        groups = create_groups(teams, group_size=4)
+        matches = generate_group_bracket(groups, qualified_per_group=2)
+        semis = [m for m in matches if m.round_name == "Semifinal"]
+        for sf in semis:
+            # Extract group name from labels like '1st Group A'
+            g1 = sf.team1.split("Group ")[1]
+            g2 = sf.team2.split("Group ")[1]
+            assert g1 != g2, f"{sf.match_id}: both teams from Group {g1}"
+
+    def test_match_count_with_groups(self) -> None:
+        teams = _teams(8)
+        groups = create_groups(teams, group_size=4)
+        matches = generate_group_bracket(groups, qualified_per_group=2)
+        # 2 semis + 1 final + 1 third-place = 4
+        assert len(matches) == 4

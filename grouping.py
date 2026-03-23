@@ -62,3 +62,24 @@ def select_qualified_teams(
         ranked = sorted(g.teams, key=lambda t: t.pair_strength, reverse=True)
         qualified.extend(ranked[:qualified_per_group])
     return qualified
+
+
+def seed_qualified_for_bracket(
+    groups: list[Group], qualified_per_group: int
+) -> list[Team]:
+    """Order qualified teams for the bracket to avoid same-group matchups.
+
+    Lists all rank-1 seeds in group order, then rank-2 seeds in group order,
+    etc.  Combined with the bracket's top-vs-bottom pairing this ensures group
+    winners face runners-up from other groups.
+    """
+    ranked_per_group: list[list[Team]] = []
+    for g in groups:
+        ranked = sorted(g.teams, key=lambda t: t.pair_strength, reverse=True)
+        ranked_per_group.append(ranked[:qualified_per_group])
+
+    seeded: list[Team] = []
+    for rank in range(qualified_per_group):
+        for gi in range(len(groups)):
+            seeded.append(ranked_per_group[gi][rank])
+    return seeded

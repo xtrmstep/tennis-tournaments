@@ -86,18 +86,14 @@ def write_teams_csv(teams: list[Team], output_dir: Path) -> None:
             )
 
 
-def write_groups_csv(
-    groups: list[Group], qualified_ids: set[str], output_dir: Path
-) -> None:
+def write_groups_csv(groups: list[Group], output_dir: Path) -> None:
     path = output_dir / "groups.csv"
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["group_name", "team_id", "pair_strength", "qualified"])
+        writer.writerow(["group_name", "team_id", "pair_strength"])
         for g in groups:
             for t in sorted(g.teams, key=lambda x: x.pair_strength, reverse=True):
-                writer.writerow(
-                    [g.name, t.team_id, t.pair_strength, "yes" if t.team_id in qualified_ids else "no"]
-                )
+                writer.writerow([g.name, t.team_id, t.pair_strength])
 
 
 def write_matches_csv(matches: list[Match], output_dir: Path) -> None:
@@ -115,7 +111,7 @@ def write_summary(
     teams: list[Team],
     pairing_mode: str,
     groups: list[Group] | None,
-    qualified_teams: list[Team] | None,
+    qualified_per_group: int | None,
     matches: list[Match],
     output_dir: Path,
 ) -> None:
@@ -133,16 +129,8 @@ def write_summary(
         for g in groups:
             team_ids = ", ".join(t.team_id for t in g.teams)
             lines.append(f"  - {g.name}: {team_ids}")
-
-    if qualified_teams:
         lines.append("")
-        lines.append("Qualified:")
-        if groups:
-            qualified_ids = {t.team_id for t in qualified_teams}
-            for g in groups:
-                g_qualified = [t.team_id for t in g.teams if t.team_id in qualified_ids]
-                if g_qualified:
-                    lines.append(f"  - {g.name}: {', '.join(g_qualified)}")
+        lines.append(f"Qualification: top {qualified_per_group} per group advance to knockout")
 
     lines.append("")
     lines.append("Knockout:")

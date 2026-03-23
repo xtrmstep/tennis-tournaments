@@ -4,8 +4,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from bracket import generate_bracket
-from grouping import create_groups, select_qualified_teams
+from bracket import generate_bracket, generate_group_bracket
+from grouping import create_groups
 from io_utils import (
     load_participants,
     write_groups_csv,
@@ -61,7 +61,6 @@ def main(argv: list[str] | None = None) -> None:
 
     # 3. Optional group stage
     groups = None
-    qualified_teams = None
     use_groups = args.group_size is not None
 
     if use_groups:
@@ -70,17 +69,13 @@ def main(argv: list[str] | None = None) -> None:
                 "Error: --qualified-per-group is required when --group-size is specified"
             )
         groups = create_groups(teams, args.group_size)
-        qualified_teams = select_qualified_teams(groups, args.qualified_per_group)
-        bracket_teams = qualified_teams
+        matches = generate_group_bracket(groups, args.qualified_per_group)
     else:
         if args.qualified_per_group is not None:
             raise SystemExit(
                 "Error: --qualified-per-group requires --group-size"
             )
-        bracket_teams = teams
-
-    # 4. Generate bracket
-    matches = generate_bracket(bracket_teams)
+        matches = generate_bracket(teams)
 
     # 5. Write output
     output_dir: Path = args.output_dir
@@ -88,15 +83,14 @@ def main(argv: list[str] | None = None) -> None:
 
     write_teams_csv(teams, output_dir)
     if groups is not None:
-        qualified_ids = {t.team_id for t in (qualified_teams or [])}
-        write_groups_csv(groups, qualified_ids, output_dir)
+        write_groups_csv(groups, output_dir)
     write_matches_csv(matches, output_dir)
     write_summary(
         participant_count=len(participants),
         teams=teams,
         pairing_mode=args.pairing_mode,
         groups=groups,
-        qualified_teams=qualified_teams,
+        qualified_per_group=args.qualified_per_group,
         matches=matches,
         output_dir=output_dir,
     )
