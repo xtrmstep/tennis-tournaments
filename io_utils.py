@@ -22,6 +22,7 @@ def load_participants(path: Path) -> list[Participant]:
                 raise SystemExit(f"Error: missing required column '{required}' in CSV")
 
         has_weight = "weight" in fields
+        has_pair = "pair" in fields
         participants: list[Participant] = []
 
         for i, row in enumerate(reader, start=1):
@@ -57,6 +58,17 @@ def load_participants(path: Path) -> list[Participant]:
                         f"Error: row {i}: weight must be positive, got {weight}"
                     )
 
+            pair: int | None = None
+            if has_pair and row.get("pair", "").strip():
+                try:
+                    pair = int(row["pair"].strip())
+                except (ValueError, TypeError):
+                    raise SystemExit(f"Error: row {i}: pair must be an integer")
+                if pair < 1:
+                    raise SystemExit(
+                        f"Error: row {i}: pair must be a positive integer, got {pair}"
+                    )
+
             participants.append(
                 Participant(
                     id=f"p{i}",
@@ -64,6 +76,7 @@ def load_participants(path: Path) -> list[Participant]:
                     gender=gender,
                     skill_percent=skill,
                     weight=weight,
+                    pair=pair,
                 )
             )
 

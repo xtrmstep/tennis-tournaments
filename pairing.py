@@ -3,6 +3,8 @@ from __future__ import annotations
 import random
 import string
 
+from collections import defaultdict
+
 from models import Participant, PairingMode, Team
 
 
@@ -92,48 +94,91 @@ def _try_random(participants: list[Participant], rng: random.Random) -> list[Tea
     return _build_teams_from_pairs(pairs)
 
 
+def _extract_fixed_pairs(
+    participants: list[Participant],
+) -> tuple[list[Team], list[Participant]]:
+    """Split participants into pre-assigned teams and remaining pool.
+
+    Participants with a `pair` value are grouped by that number.
+    Each group must have exactly 2 members.
+    """
+    by_pair: dict[int, list[Participant]] = defaultdict(list)
+    remaining: list[Participant] = []
+
+    for p in participants:
+        if p.pair is not None:
+            by_pair[p.pair].append(p)
+        else:
+            remaining.append(p)
+
+    fixed_teams: list[Team] = []
+    for pair_num, members in sorted(by_pair.items()):
+        if len(members) != 2:
+            raise SystemExit(
+                f"Error: pair {pair_num} must have exactly 2 participants, "
+                f"got {len(members)}"
+            )
+        fixed_teams.append(
+            Team(team_id="", player1=members[0], player2=members[1])
+        )
+
+    return fixed_teams, remaining
+
+
 def generate_teams(
     participants: list[Participant],
     pairing_mode: PairingMode,
     seed: int | None = None,
     attempts: int = 100,
 ) -> list[Team]:
-    """Generate balanced 2-person teams respecting the pairing mode."""
-    _validate_pairing_possible(participants, pairing_mode)
+    """Generate balanced 2-person teams respecting the pairing mode.
 
-    rng = random.Random(seed)
-    males = [p for p in participants if p.gender == "male"]
-    females = [p for p in participants if p.gender == "female"]
+    Participants with a `pair` value are paired first; the remaining
+    participants go through normal mode-based pairing.
+    """
+    fixed_teams, remaining = _extract_fixed_pairs(participants)
 
-    best: list[Team] | None = None
-    best_spread: int = 999_999
+    if remaining:
+        _validate_pairing_possible(remaining, pairing_mode)
 
-    for _ in range(attempts):
-        if pairing_mode == PairingMode.MIXED:
-            candidate = _try_mixed(males, females, rng)
-        elif pairing_mode == PairingMode.MALE_ONLY:
-            candidate = _try_single_gender(males, rng)
-        elif pairing_mode == PairingMode.FEMALE_ONLY:
-            candidate = _try_single_gender(females, rng)
-        elif pairing_mode == PairingMode.SAME_GENDER:
-            male_teams = _try_single_gender(males, rng) if len(males) >= 2 else []
-            female_teams = _try_single_gender(females, rng) if len(females) >= 2 else []
-            all_pairs: list[tuple[Participant, Participant]] = []
-            for t in male_teams:
-                all_pairs.append((t.player1, t.player2))
-            for t in female_teams:
-                all_pairs.append((t.player1, t.player2))
-            candidate = _build_teams_from_pairs(all_pairs)
-        else:  # random
-            candidate = _try_random(participants, rng)
+        rng = random.Random(seed)
+        males = [p for p in remaining if p.gender == "male"]
+        females = [p for p in remaining if p.gender == "female"]
 
-        spread = _spread(candidate)
-        if spread < best_spread:
-            best_spread = spread
-            best = candidate
+        best: list[Team] | None = None
+        best_spread: int = 999_999
 
-    assert best is not None
-    # Re-assign team IDs on the final result so they're clean A, B, C, ...
-    for i, team in enumerate(best):
+        for _ in range(attempts):
+            if pairing_mode == PairingMode.MIXED:
+                candidate = _try_mixed(males, females, rng)
+            elif pairing_mode == PairingMode.MALE_ONLY:
+                candidate = _try_single_gender(males, rng)
+            elif pairing_mode == PairingMode.FEMALE_ONLY:
+                candidate = _try_single_gender(females, rng)
+            elif pairing_mode == PairingMode.SAME_GENDER:
+                male_teams = _try_single_gender(males, rng) if len(males) >= 2 else []
+                female_teams = _try_single_gender(females, rng) if len(females) >= 2 else []
+                all_pairs: list[tuple[Participant, Participant]] = []
+                for t in male_teams:
+                    all_pairs.append((t.player1, t.player2))
+                for t in female_teams:
+                    all_pairs.append((t.player1, t.player2))
+                candidate = _build_teams_from_pairs(all_pairs)
+            else:  # random
+                candidate = _try_random(remaining, rng)
+
+            spread = _spread(candidate)
+            if spread < best_spread:
+                best_spread = spread
+                best = candidate
+
+        assert best is not None
+        generated = best
+    else:
+        generated = []
+
+    all_teams = fixed_teams + generated
+    # Assign clean team IDs: A, B, C, ...
+    for i, team in enumerate(all_teams):
         team.team_id = _team_id(i)
-    return best
+    return all_teams

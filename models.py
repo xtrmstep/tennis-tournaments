@@ -19,6 +19,7 @@ class Participant:
     gender: str
     skill_percent: int
     weight: float | None = None
+    pair: int | None = None
 
 
 @dataclass

@@ -120,3 +120,69 @@ class TestBalancing:
         teams = generate_teams(participants, PairingMode.RANDOM, seed=1)
         ids = [t.team_id for t in teams]
         assert ids == ["A", "B", "C"]
+
+
+class TestFixedPairs:
+    def test_fixed_pair_comes_first(self) -> None:
+        p1 = _make("Alex", "male", 70)
+        p2 = _make("Maria", "female", 60)
+        p1.pair = 1
+        p2.pair = 1
+        rest = _males(2) + _females(2)
+        teams = generate_teams([p1, p2] + rest, PairingMode.RANDOM, seed=1)
+        # Fixed pair should be team A
+        assert teams[0].player1.name == "Alex"
+        assert teams[0].player2.name == "Maria"
+        assert len(teams) == 3
+
+    def test_multiple_fixed_pairs(self) -> None:
+        p1 = _make("A1", "male", 70)
+        p2 = _make("A2", "female", 60)
+        p3 = _make("B1", "male", 50)
+        p4 = _make("B2", "female", 40)
+        p1.pair = 1
+        p2.pair = 1
+        p3.pair = 2
+        p4.pair = 2
+        rest = _males(2) + _females(2)
+        teams = generate_teams([p1, p2, p3, p4] + rest, PairingMode.RANDOM, seed=1)
+        assert len(teams) == 4
+        assert teams[0].player1.name == "A1"
+        assert teams[0].player2.name == "A2"
+        assert teams[1].player1.name == "B1"
+        assert teams[1].player2.name == "B2"
+
+    def test_all_fixed(self) -> None:
+        p1 = _make("A1", "male", 70)
+        p2 = _make("A2", "female", 60)
+        p1.pair = 1
+        p2.pair = 1
+        teams = generate_teams([p1, p2], PairingMode.RANDOM, seed=1)
+        assert len(teams) == 1
+
+    def test_invalid_pair_size(self) -> None:
+        p1 = _make("A1", "male", 70)
+        p2 = _make("A2", "female", 60)
+        p3 = _make("A3", "male", 50)
+        p1.pair = 1
+        p2.pair = 1
+        p3.pair = 1
+        with pytest.raises(SystemExit, match="exactly 2"):
+            generate_teams([p1, p2, p3], PairingMode.RANDOM, seed=1)
+
+    def test_fixed_pairs_skip_mode_validation(self) -> None:
+        """A fixed male+male pair should work even in mixed mode for the rest."""
+        p1 = _make("M1", "male", 70)
+        p2 = _make("M2", "male", 60)
+        p1.pair = 1
+        p2.pair = 1
+        rest = _males(2) + _females(2)
+        teams = generate_teams([p1, p2] + rest, PairingMode.MIXED, seed=1)
+        assert len(teams) == 3
+        # Fixed pair is male+male — allowed
+        assert teams[0].player1.gender == "male"
+        assert teams[0].player2.gender == "male"
+        # Remaining pairs follow mixed mode
+        for t in teams[1:]:
+            genders = {t.player1.gender, t.player2.gender}
+            assert genders == {"male", "female"}
