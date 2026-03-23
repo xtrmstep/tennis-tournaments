@@ -15,6 +15,7 @@ from io_utils import (
 )
 from models import PairingMode
 from pairing import generate_teams
+from scheduling import assign_courts
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -46,6 +47,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--seed", type=int, default=None, help="Random seed for reproducibility"
     )
+    parser.add_argument(
+        "--courts", type=int, default=1, help="Number of available courts (default: 1)"
+    )
     return parser.parse_args(argv)
 
 
@@ -76,6 +80,9 @@ def main(argv: list[str] | None = None) -> None:
                 "Error: --qualified-per-group requires --group-size"
             )
         matches = generate_bracket(teams)
+
+    # 4. Assign courts
+    assign_courts(matches, args.courts)
 
     # 5. Write output
     output_dir: Path = args.output_dir

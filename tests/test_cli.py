@@ -104,6 +104,23 @@ class TestCLISuccess:
         assert "Participants: 8" in summary
         assert "Teams: 4" in summary
 
+    def test_courts_in_output(self, sample_csv: Path, tmp_path: Path) -> None:
+        out = tmp_path / "out"
+        main([
+            "--input", str(sample_csv),
+            "--output-dir", str(out),
+            "--courts", "2",
+            "--seed", "1",
+        ])
+        with open(out / "matches.csv", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            rows = list(reader)
+        assert "court" in reader.fieldnames
+        assert "time_slot" in reader.fieldnames
+        for row in rows:
+            assert int(row["court"]) in (1, 2)
+            assert int(row["time_slot"]) >= 1
+
 
 class TestCLIFailure:
     def test_invalid_csv_gender(self, bad_csv: Path, tmp_path: Path) -> None:

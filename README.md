@@ -6,9 +6,10 @@ A simple Python CLI tool that organizes a pair tennis tournament from a CSV file
 
 1. Reads participants from a CSV file
 2. Generates balanced 2-person teams respecting gender pairing rules
-3. Optionally splits teams into groups (snake seeding)
+3. Optionally splits teams into groups (snake seeding) with round-robin matches
 4. Generates a single-elimination knockout bracket structure
-5. Writes results to output files
+5. Assigns matches to courts and time slots
+6. Writes results to output files
 
 ## Input CSV format
 
@@ -41,6 +42,10 @@ python main.py --input participants.csv --output-dir out --pairing-mode mixed --
 python main.py --input participants.csv --output-dir out \
     --pairing-mode mixed --group-size 4 --qualified-per-group 2
 
+# With 2 courts for parallel play
+python main.py --input participants.csv --output-dir out \
+    --pairing-mode mixed --group-size 4 --qualified-per-group 2 --courts 2
+
 # Same-gender pairing with groups
 python main.py --input participants.csv --output-dir out \
     --pairing-mode same_gender --group-size 2 --qualified-per-group 1 --seed 7
@@ -56,6 +61,7 @@ python main.py --input participants.csv --output-dir out \
 | `--group-size` | No | — | Number of teams per group |
 | `--qualified-per-group` | No | — | Teams qualifying from each group |
 | `--seed` | No | — | Random seed for reproducibility |
+| `--courts` | No | `1` | Number of available courts |
 
 ## Pairing modes
 
@@ -67,13 +73,27 @@ python main.py --input participants.csv --output-dir out \
 | `female_only` | Each team is female + female |
 | `same_gender` | Teams are either male+male or female+female |
 
+## Court allocation
+
+Use `--courts N` to configure the number of available courts:
+
+- **1 court** (default): all matches are played sequentially
+- **2 courts**: up to 2 matches run in parallel per time slot
+- **3 courts**: up to 3 matches run in parallel per time slot
+
+The scheduler ensures:
+- No team plays on two courts in the same time slot
+- Knockout matches respect dependencies (e.g., the Final waits for both Semifinals to finish)
+
+Each match in the output includes its `court` number and `time_slot`.
+
 ## Output files
 
 All files are written to `--output-dir`:
 
 - **teams.csv** — Generated teams with player names, IDs, and pair strength
-- **groups.csv** — Group assignments with qualification status (only if `--group-size` used)
-- **matches.csv** — Knockout bracket structure (match IDs, rounds, team references)
+- **groups.csv** — Group assignments (only if `--group-size` used)
+- **matches.csv** — Full schedule: group-stage round-robin and knockout bracket, with court and time slot assignments
 - **summary.txt** — Human-readable tournament overview
 
 ## How to run tests

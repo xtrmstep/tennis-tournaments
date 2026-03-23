@@ -100,9 +100,9 @@ def write_matches_csv(matches: list[Match], output_dir: Path) -> None:
     path = output_dir / "matches.csv"
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["match_id", "round_name", "team1", "team2"])
+        writer.writerow(["match_id", "round_name", "team1", "team2", "court", "time_slot"])
         for m in matches:
-            writer.writerow([m.match_id, m.round_name, m.team1, m.team2])
+            writer.writerow([m.match_id, m.round_name, m.team1, m.team2, m.court, m.time_slot])
 
 
 def write_summary(
@@ -140,12 +140,12 @@ def write_summary(
         lines.append("")
         lines.append("Group stage:")
         for m in group_matches:
-            lines.append(f"  - {m.match_id}: {m.team1} vs {m.team2} ({m.round_name})")
+            lines.append(f"  - {m.match_id}: {m.team1} vs {m.team2} ({m.round_name}) [Court {m.court}, Slot {m.time_slot}]")
 
     lines.append("")
     lines.append("Knockout:")
     for m in knockout_matches:
-        lines.append(f"  - {m.match_id}: {m.team1} vs {m.team2}")
+        lines.append(f"  - {m.match_id}: {m.team1} vs {m.team2} [Court {m.court}, Slot {m.time_slot}]")
 
     lines.append("")
     path = output_dir / "summary.txt"

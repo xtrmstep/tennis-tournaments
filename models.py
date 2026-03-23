@@ -44,3 +44,5 @@ class Match:
     round_name: str
     team1: str
     team2: str
+    court: int = 0
+    time_slot: int = 0
