@@ -1,0 +1,64 @@
+from __future__ import annotations
+
+import string
+
+from models import Group, Team
+
+
+def create_groups(teams: list[Team], group_size: int) -> list[Group]:
+    """Split teams into groups using snake seeding by pair_strength."""
+    n = len(teams)
+    if group_size < 2:
+        raise SystemExit("Error: group_size must be at least 2")
+    if n < group_size:
+        raise SystemExit(
+            f"Error: not enough teams ({n}) for group_size {group_size}"
+        )
+    if n % group_size != 0:
+        raise SystemExit(
+            f"Error: {n} teams cannot be evenly divided into groups of {group_size}"
+        )
+
+    num_groups = n // group_size
+    sorted_teams = sorted(teams, key=lambda t: t.pair_strength, reverse=True)
+
+    # Initialize groups
+    groups: list[Group] = [
+        Group(name=f"Group {string.ascii_uppercase[i]}", teams=[])
+        for i in range(num_groups)
+    ]
+
+    # Snake-seed: forward pass then reverse pass
+    direction = 1
+    group_idx = 0
+    for team in sorted_teams:
+        groups[group_idx].teams.append(team)
+        # Advance with snake logic
+        next_idx = group_idx + direction
+        if next_idx >= num_groups or next_idx < 0:
+            direction *= -1  # reverse
+        else:
+            group_idx = next_idx
+
+    return groups
+
+
+def select_qualified_teams(
+    groups: list[Group], qualified_per_group: int
+) -> list[Team]:
+    """Select top N teams per group by pair_strength."""
+    if qualified_per_group < 1:
+        raise SystemExit("Error: qualified_per_group must be at least 1")
+
+    for g in groups:
+        if qualified_per_group > len(g.teams):
+            raise SystemExit(
+                f"Error: qualified_per_group ({qualified_per_group}) exceeds "
+                f"teams in {g.name} ({len(g.teams)})"
+            )
+
+    qualified: list[Team] = []
+    for g in groups:
+        ranked = sorted(g.teams, key=lambda t: t.pair_strength, reverse=True)
+        qualified.extend(ranked[:qualified_per_group])
+    return qualified
