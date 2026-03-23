@@ -100,9 +100,9 @@ def write_matches_csv(matches: list[Match], output_dir: Path) -> None:
     path = output_dir / "matches.csv"
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["match_id", "round_name", "team1", "team2", "source1", "source2"])
+        writer.writerow(["match_id", "round_name", "team1", "team2"])
         for m in matches:
-            writer.writerow([m.match_id, m.round_name, m.team1, m.team2, m.source1, m.source2])
+            writer.writerow([m.match_id, m.round_name, m.team1, m.team2])
 
 
 def write_summary(

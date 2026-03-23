@@ -32,8 +32,8 @@ class TestBracket4Teams:
     def test_final_references_semifinal_winners(self) -> None:
         matches = generate_bracket(_teams(4))
         final = next(m for m in matches if m.round_name == "Final")
-        assert "Winner" in final.source1
-        assert "Winner" in final.source2
+        assert "Winner" in final.team1
+        assert "Winner" in final.team2
 
 
 class TestBracket8Teams:
@@ -54,16 +54,16 @@ class TestBracket8Teams:
         matches = generate_bracket(_teams(8))
         qf = [m for m in matches if m.round_name == "Quarterfinal"]
         for m in qf:
-            # source1 and source2 should be direct team IDs (no "Winner" prefix)
-            assert "Winner" not in m.source1
-            assert "Winner" not in m.source2
+            # team1 and team2 should be direct team IDs (no "Winner" prefix)
+            assert "Winner" not in m.team1
+            assert "Winner" not in m.team2
 
     def test_semifinal_references_qf(self) -> None:
         matches = generate_bracket(_teams(8))
         sf = [m for m in matches if m.round_name == "Semifinal"]
         for m in sf:
-            assert "Winner" in m.source1
-            assert "Winner" in m.source2
+            assert "Winner" in m.team1
+            assert "Winner" in m.team2
 
 
 class TestBracket2Teams:
@@ -107,5 +107,5 @@ class TestBracketEdgeCases:
     def test_third_place_references_losers(self) -> None:
         matches = generate_bracket(_teams(4))
         third = next(m for m in matches if m.round_name == "3rd Place")
-        assert "Loser" in third.source1
-        assert "Loser" in third.source2
+        assert "Loser" in third.team1
+        assert "Loser" in third.team2

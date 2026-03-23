@@ -44,5 +44,3 @@ class Match:
     round_name: str
     team1: str
     team2: str
-    source1: str
-    source2: str

@@ -60,7 +60,7 @@ def _bracket_from_labels(labels: list[str]) -> list[Match]:
             mid = f"M{match_counter}"
             matches.append(Match(
                 match_id=mid, round_name=rname,
-                team1=a, team2=b, source1=a, source2=b,
+                team1=a, team2=b,
             ))
             if rname == "Semifinal":
                 first_round_sf_ids.append(mid)
@@ -79,7 +79,7 @@ def _bracket_from_labels(labels: list[str]) -> list[Match]:
             mid = f"M{match_counter}"
             matches.append(Match(
                 match_id=mid, round_name=rname,
-                team1=s1, team2=s2, source1=s1, source2=s2,
+                team1=s1, team2=s2,
             ))
             if rname == "Semifinal":
                 semifinal_match_ids.append(mid)
@@ -94,8 +94,6 @@ def _bracket_from_labels(labels: list[str]) -> list[Match]:
                 match_id=mid, round_name="3rd Place",
                 team1=f"Loser {semifinal_match_ids[0]}",
                 team2=f"Loser {semifinal_match_ids[1]}",
-                source1=f"Loser {semifinal_match_ids[0]}",
-                source2=f"Loser {semifinal_match_ids[1]}",
             ))
             match_counter += 1
 
@@ -108,8 +106,6 @@ def _bracket_from_labels(labels: list[str]) -> list[Match]:
                 match_id=mid, round_name="3rd Place",
                 team1=f"Loser {first_round_sf_ids[0]}",
                 team2=f"Loser {first_round_sf_ids[1]}",
-                source1=f"Loser {first_round_sf_ids[0]}",
-                source2=f"Loser {first_round_sf_ids[1]}",
             ))
 
     return matches
