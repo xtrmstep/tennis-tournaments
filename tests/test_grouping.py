@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from bracket import generate_group_bracket
-from grouping import create_groups, select_qualified_teams
+from grouping import create_groups, generate_group_matches, select_qualified_teams
 from models import Participant, Team
 
 
@@ -100,9 +100,10 @@ class TestGroupBracket:
         teams = _teams(8)
         groups = create_groups(teams, group_size=4)
         matches = generate_group_bracket(groups, qualified_per_group=2)
-        semis = [m for m in matches if m.round_name == "Semifinal"]
+        knockout = [m for m in matches if not m.round_name.startswith("Group")]
+        semis = [m for m in knockout if m.round_name == "Semifinal"]
         assert len(semis) == 2
-        # All team references should be group-position labels
+        # All team references in semis should be group-position labels
         all_labels = set()
         for sf in semis:
             all_labels.add(sf.team1)
@@ -115,7 +116,8 @@ class TestGroupBracket:
         teams = _teams(8)
         groups = create_groups(teams, group_size=4)
         matches = generate_group_bracket(groups, qualified_per_group=2)
-        semis = [m for m in matches if m.round_name == "Semifinal"]
+        knockout = [m for m in matches if not m.round_name.startswith("Group")]
+        semis = [m for m in knockout if m.round_name == "Semifinal"]
         for sf in semis:
             # Extract group name from labels like '1st Group A'
             g1 = sf.team1.split("Group ")[1]
@@ -126,5 +128,44 @@ class TestGroupBracket:
         teams = _teams(8)
         groups = create_groups(teams, group_size=4)
         matches = generate_group_bracket(groups, qualified_per_group=2)
-        # 2 semis + 1 final + 1 third-place = 4
-        assert len(matches) == 4
+        # Group stage: 2 groups × C(4,2) = 2×6 = 12 round-robin matches
+        group_matches = [m for m in matches if m.round_name.startswith("Group")]
+        assert len(group_matches) == 12
+        # Knockout: 2 semis + 1 final + 1 third-place = 4
+        knockout = [m for m in matches if not m.round_name.startswith("Group")]
+        assert len(knockout) == 4
+        # Total
+        assert len(matches) == 16
+
+
+class TestGroupMatches:
+    def test_round_robin_match_count(self) -> None:
+        """Each group of N teams produces N*(N-1)/2 matches."""
+        teams = _teams(6)
+        groups = create_groups(teams, group_size=3)  # 2 groups of 3
+        matches = generate_group_matches(groups)
+        # C(3,2) × 2 = 6
+        assert len(matches) == 6
+
+    def test_round_names_are_group_names(self) -> None:
+        teams = _teams(4)
+        groups = create_groups(teams, group_size=2)  # 2 groups of 2
+        matches = generate_group_matches(groups)
+        round_names = {m.round_name for m in matches}
+        assert round_names == {"Group A", "Group B"}
+
+    def test_uses_actual_team_ids(self) -> None:
+        teams = _teams(4)
+        groups = create_groups(teams, group_size=2)
+        matches = generate_group_matches(groups)
+        all_ids = {t.team_id for t in teams}
+        for m in matches:
+            assert m.team1 in all_ids
+            assert m.team2 in all_ids
+
+    def test_match_ids_sequential(self) -> None:
+        teams = _teams(6)
+        groups = create_groups(teams, group_size=3)
+        matches = generate_group_matches(groups)
+        for i, m in enumerate(matches, start=1):
+            assert m.match_id == f"M{i}"

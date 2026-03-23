@@ -89,11 +89,12 @@ class TestCLISuccess:
         ])
         assert (out / "groups.csv").exists()
         assert (out / "matches.csv").exists()
-        # Bracket should use group-position labels
+        # Matches should include group-stage round-robin matches
         matches_text = (out / "matches.csv").read_text(encoding="utf-8")
         assert "Group" in matches_text
-        # Summary should state qualification rule
+        # Summary should show group stage and qualification rule
         summary = (out / "summary.txt").read_text(encoding="utf-8")
+        assert "Group stage:" in summary
         assert "top 1 per group advance to knockout" in summary
 
     def test_summary_content(self, sample_csv: Path, tmp_path: Path) -> None:

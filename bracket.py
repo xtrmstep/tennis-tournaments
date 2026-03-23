@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 
+from grouping import generate_group_matches
 from models import Group, Match, Team
 
 # Round names by number of teams in that round
@@ -30,7 +31,7 @@ def _ordinal(n: int) -> str:
     return f"{n}th"
 
 
-def _bracket_from_labels(labels: list[str]) -> list[Match]:
+def _bracket_from_labels(labels: list[str], match_start: int = 1) -> list[Match]:
     """Build a single-elimination bracket from a list of slot labels."""
     n = len(labels)
     if n < 2:
@@ -45,7 +46,7 @@ def _bracket_from_labels(labels: list[str]) -> list[Match]:
         first_round_pairs.append((slots[i], slots[bracket_size - 1 - i]))
 
     matches: list[Match] = []
-    match_counter = 1
+    match_counter = match_start
     current_round_sources: list[str] = []
     round_teams = bracket_size
     rname = _round_name(round_teams)
@@ -138,6 +139,10 @@ def generate_group_bracket(
                 f"teams in {g.name} ({len(g.teams)})"
             )
 
+    # Round-robin group matches first
+    group_matches = generate_group_matches(groups)
+    next_id = len(group_matches) + 1
+
     # Build labels in cross-group seeded order:
     # all rank-1 seeds in group order, then rank-2 seeds, etc.
     labels: list[str] = []
@@ -145,4 +150,5 @@ def generate_group_bracket(
         for g in groups:
             labels.append(f"{_ordinal(rank + 1)} {g.name}")
 
-    return _bracket_from_labels(labels)
+    knockout_matches = _bracket_from_labels(labels, match_start=next_id)
+    return group_matches + knockout_matches

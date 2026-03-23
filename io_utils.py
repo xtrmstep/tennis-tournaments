@@ -132,9 +132,19 @@ def write_summary(
         lines.append("")
         lines.append(f"Qualification: top {qualified_per_group} per group advance to knockout")
 
+    # Separate group stage from knockout matches
+    group_matches = [m for m in matches if m.round_name.startswith("Group")]
+    knockout_matches = [m for m in matches if not m.round_name.startswith("Group")]
+
+    if group_matches:
+        lines.append("")
+        lines.append("Group stage:")
+        for m in group_matches:
+            lines.append(f"  - {m.match_id}: {m.team1} vs {m.team2} ({m.round_name})")
+
     lines.append("")
     lines.append("Knockout:")
-    for m in matches:
+    for m in knockout_matches:
         lines.append(f"  - {m.match_id}: {m.team1} vs {m.team2}")
 
     lines.append("")

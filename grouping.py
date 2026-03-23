@@ -1,8 +1,27 @@
 from __future__ import annotations
 
+import itertools
 import string
 
-from models import Group, Team
+from models import Group, Match, Team
+
+
+def generate_group_matches(
+    groups: list[Group], match_start: int = 1,
+) -> list[Match]:
+    """Generate round-robin matches within each group."""
+    matches: list[Match] = []
+    counter = match_start
+    for g in groups:
+        for t1, t2 in itertools.combinations(g.teams, 2):
+            matches.append(Match(
+                match_id=f"M{counter}",
+                round_name=g.name,
+                team1=t1.team_id,
+                team2=t2.team_id,
+            ))
+            counter += 1
+    return matches
 
 
 def create_groups(teams: list[Team], group_size: int) -> list[Group]:
