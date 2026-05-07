@@ -29,6 +29,7 @@
               min="1"
               max="10"
               :value="person.rating"
+              :aria-label="`Rating for ${person.name}`"
               style="width: 60px;"
               @blur="onRatingChange(person, $event)"
               @keydown.enter="onRatingChange(person, $event)"
