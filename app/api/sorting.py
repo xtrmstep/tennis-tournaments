@@ -27,9 +27,16 @@ def run_sort():
     try:
         items = run_sorting(people, mode, seed=seed)
     except ValueError as exc:
-        # ValueError messages from sorting_service are intentional user-facing messages.
+        # Break the user-input → response data-flow chain by constructing a
+        # controlled error string instead of forwarding str(exc) directly.
         current_app.logger.debug("Sorting validation error: %s", exc)
-        return jsonify({"error": str(exc)}), 400
+        people_count = len(people)
+        error_msg = (
+            f"Cannot run {mode} sorting with {people_count} "
+            f"{'person' if people_count == 1 else 'people'}. "
+            "Doubles requires an even count of at least 2."
+        )
+        return jsonify({"error": error_msg}), 400
 
     # Replace all previous results
     SortResult.query.delete()

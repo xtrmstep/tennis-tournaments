@@ -28,9 +28,10 @@ export const updateRating = (id, rating) =>
 /**
  * Run sorting with the given mode.
  * @param {string} mode - 'singles' or 'doubles'
- * @param {number|undefined} seed - optional RNG seed for reproducible doubles pairing
+ * @param {number|undefined} seed - optional RNG seed for reproducible doubles pairing;
+ *   not currently exposed in the UI but available for programmatic use
  */
-export const runSorting = (mode, seed) =>
+export const runSorting = (mode, seed = undefined) =>
   api.post('/sorting/run', { mode, seed })
 
 export const getSortResult = () => api.get('/sorting/result')

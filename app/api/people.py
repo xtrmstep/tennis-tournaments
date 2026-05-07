@@ -82,8 +82,8 @@ def update_rating(person_id: int):
     if raw is None:
         return jsonify({"error": "rating is required"}), 400
 
-    if not isinstance(raw, int) or isinstance(raw, bool):
-        # bool subclasses int in Python, so exclude it explicitly.
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        # bool subclasses int in Python, so exclude it explicitly before the int check.
         return jsonify({"error": "rating must be an integer 1-10"}), 400
 
     if raw < 1 or raw > 10:
@@ -93,13 +93,21 @@ def update_rating(person_id: int):
     db.session.commit()
     return jsonify(person.to_dict()), 200
 
-
 @people_bp.get("/<int:person_id>/photo")
 @login_required
 def get_photo(person_id: int):
     person = db.session.get(Person, person_id)
     if not person or not person.photo_path:
         return jsonify({"error": "Photo not found"}), 404
-    if not os.path.exists(person.photo_path):
+
+    # Ensure the stored path stays within the uploads directory.
+    uploads_dir = os.path.realpath(
+        os.path.join(current_app.instance_path, "uploads")
+    )
+    real_path = os.path.realpath(person.photo_path)
+    if not real_path.startswith(uploads_dir + os.sep):
+        return jsonify({"error": "Photo not found"}), 404
+
+    if not os.path.exists(real_path):
         return jsonify({"error": "Photo file missing"}), 404
-    return send_file(person.photo_path), 200
+    return send_file(real_path), 200

@@ -73,12 +73,18 @@ onMounted(async () => {
 
 async function onRatingChange(person, event) {
   const val = parseInt(event.target.value, 10)
-  if (isNaN(val) || val < 1 || val > 10) return
+  if (isNaN(val) || val < 1 || val > 10) {
+    error.value = 'Rating must be a number between 1 and 10'
+    event.target.value = person.rating ?? ''
+    return
+  }
+  error.value = ''
   try {
     const res = await updateRating(person.id, val)
     person.rating = res.data.rating
   } catch {
     error.value = 'Failed to update rating'
+    event.target.value = person.rating ?? ''
   }
 }
 </script>
