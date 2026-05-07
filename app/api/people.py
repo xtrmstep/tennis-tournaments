@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 
-from flask import Blueprint, jsonify, request, send_file
+from flask import Blueprint, current_app, jsonify, request, send_file
 
 from ..auth import login_required
 from ..extensions import db
@@ -11,6 +11,9 @@ from ..models import Person
 people_bp = Blueprint("people", __name__)
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif"}
+
+# Map normalised extension to a safe, fixed suffix used when saving photos.
+_EXT_MAP = {".jpg": ".jpg", ".jpeg": ".jpg", ".png": ".png", ".gif": ".gif"}
 
 
 def _allowed_photo(filename: str) -> bool:
@@ -44,14 +47,12 @@ def create_person():
             db.session.rollback()
             return jsonify({"error": "Photo must be jpg, jpeg, png, or gif"}), 400
 
-        _, ext = os.path.splitext(photo.filename.lower())
-        uploads_dir = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
-            "instance",
-            "uploads",
-        )
+        _, raw_ext = os.path.splitext(photo.filename.lower())
+        # Use a controlled suffix from the allow-list — never trust raw user input in paths.
+        safe_ext = _EXT_MAP[raw_ext]
+        uploads_dir = os.path.join(current_app.instance_path, "uploads")
         os.makedirs(uploads_dir, exist_ok=True)
-        save_path = os.path.join(uploads_dir, f"{person.id}{ext}")
+        save_path = os.path.join(uploads_dir, f"{person.id}{safe_ext}")
         photo.save(save_path)
         person.photo_path = save_path
 
@@ -82,6 +83,7 @@ def update_rating(person_id: int):
         return jsonify({"error": "rating is required"}), 400
 
     if not isinstance(raw, int) or isinstance(raw, bool):
+        # bool subclasses int in Python, so exclude it explicitly.
         return jsonify({"error": "rating must be an integer 1-10"}), 400
 
     if raw < 1 or raw > 10:

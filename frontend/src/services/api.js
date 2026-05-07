@@ -25,6 +25,11 @@ export const createPerson = (formData) =>
 export const updateRating = (id, rating) =>
   api.put(`/people/${id}/rating`, { rating })
 
+/**
+ * Run sorting with the given mode.
+ * @param {string} mode - 'singles' or 'doubles'
+ * @param {number|undefined} seed - optional RNG seed for reproducible doubles pairing
+ */
 export const runSorting = (mode, seed) =>
   api.post('/sorting/run', { mode, seed })
 

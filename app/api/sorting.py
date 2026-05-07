@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from ..auth import login_required
 from ..extensions import db
@@ -27,6 +27,8 @@ def run_sort():
     try:
         items = run_sorting(people, mode, seed=seed)
     except ValueError as exc:
+        # ValueError messages from sorting_service are intentional user-facing messages.
+        current_app.logger.debug("Sorting validation error: %s", exc)
         return jsonify({"error": str(exc)}), 400
 
     # Replace all previous results
