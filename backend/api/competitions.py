@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request, session
 
+from models import Participant, PairingMode
+from pairing import generate_teams
 from ..auth import login_required, moderator_or_admin_required
 from ..extensions import db
 from ..models import (
@@ -205,9 +207,10 @@ def transition_competition(competition_id: int):
             ), 409
 
     elif requested == "draw":
-        player_count = CompetitionPlayer.query.filter_by(
+        confirmed_players = CompetitionPlayer.query.filter_by(
             competition_id=comp.id, status="player"
-        ).count()
+        ).all()
+        player_count = len(confirmed_players)
         if player_count < 2:
             return jsonify(
                 {
@@ -218,35 +221,42 @@ def transition_competition(competition_id: int):
                 }
             ), 409
         if comp.event_type == "doubles":
-            if player_count % 2 != 0:
-                return jsonify(
-                    {
-                        "error": (
-                            f"Doubles competitions require an even number of confirmed players "
-                            f"(currently {player_count})."
-                        )
-                    }
-                ), 409
-            paired_ids: set[int] = set()
-            for pair in CompetitionPair.query.filter_by(competition_id=comp.id).all():
-                paired_ids.add(pair.player_a_id)
-                paired_ids.add(pair.player_b_id)
-            confirmed_ids = {
-                cp.id
-                for cp in CompetitionPlayer.query.filter_by(
-                    competition_id=comp.id, status="player"
-                ).all()
+            existing_pairs = CompetitionPair.query.filter_by(competition_id=comp.id).all()
+            paired_ids: set[int] = {
+                pid
+                for pair in existing_pairs
+                for pid in (pair.player_a_id, pair.player_b_id)
             }
-            unpaired = confirmed_ids - paired_ids
-            if unpaired:
+            unpaired = [cp for cp in confirmed_players if cp.id not in paired_ids]
+            if len(unpaired) % 2 != 0:
                 return jsonify(
                     {
                         "error": (
-                            f"{len(unpaired)} confirmed player(s) have no pair assigned. "
-                            "All confirmed players must be paired before starting draw."
+                            f"{len(unpaired)} confirmed player(s) are unpaired and cannot form "
+                            "complete pairs. Manually pair or adjust confirmed players first."
                         )
                     }
                 ), 409
+            if unpaired:
+                participants = [
+                    Participant(
+                        id=str(cp.id),
+                        name=(cp.user.full_name or cp.user.username or str(cp.user_id)),
+                        gender=(cp.user.gender or "male"),
+                        skill_percent=(cp.user.skill_level or 5) * 10,
+                    )
+                    for cp in unpaired
+                ]
+                auto_teams = generate_teams(participants, PairingMode.RANDOM)
+                pair_offset = len(existing_pairs)
+                for idx, team in enumerate(auto_teams):
+                    letter = string.ascii_uppercase[(pair_offset + idx) % 26]
+                    db.session.add(CompetitionPair(
+                        competition_id=comp.id,
+                        player_a_id=int(team.player1.id),
+                        player_b_id=int(team.player2.id),
+                        team_name=f"Team {letter}",
+                    ))
 
     elif requested == "match":
         match_count = CompetitionMatch.query.filter_by(competition_id=comp.id).count()
@@ -531,7 +541,7 @@ def list_pairs(competition_id: int):
 
 
 @competitions_bp.post("/<int:competition_id>/pairs")
-@moderator_or_admin_required
+@login_required
 def create_pair(competition_id: int):
     user = _current_user()
     comp = db.session.get(Competition, competition_id)
@@ -550,6 +560,16 @@ def create_pair(competition_id: int):
         return jsonify({"error": "player_a_id and player_b_id are required"}), 400
     if player_a_id == player_b_id:
         return jsonify({"error": "A player cannot be paired with themselves."}), 400
+
+    # Non-managers may only create pairs that include their own confirmed entry
+    if not _can_manage(user):
+        my_entry = CompetitionPlayer.query.filter_by(
+            competition_id=comp.id, user_id=user.id, status="player"
+        ).first()
+        if not my_entry:
+            return jsonify({"error": "You must be a confirmed player in this competition."}), 403
+        if my_entry.id not in (player_a_id, player_b_id):
+            return jsonify({"error": "You can only create pairs that include yourself."}), 403
 
     team_name = data.get("team_name")
     if team_name is not None:

@@ -1394,12 +1394,14 @@ def test_grouping_to_draw_all_paired_succeeds(client, app):
 def test_grouping_to_draw_with_unpaired_player_fails(client, app):
     cid, player_ids = _doubles_comp_with_players(client, app, num_players=4)
     _comp_transition(client, cid, "grouping")
-    # Pair only 2 of the 4 players
+    # Pair only 2 of the 4 players; remaining 2 should be auto-paired on draw transition
     client.post(f"/api/competitions/{cid}/pairs",
                 json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]})
     r = _comp_transition(client, cid, "draw")
-    assert r.status_code == 409
-    assert "pair" in r.get_json()["error"].lower()
+    assert r.status_code == 200
+    assert r.get_json()["status"] == "draw"
+    pairs = client.get(f"/api/competitions/{cid}/pairs").get_json()
+    assert len(pairs) == 2
 
 
 def test_grouping_to_draw_odd_player_count_fails(client, app):
@@ -1488,3 +1490,86 @@ def test_create_pair_team_name_too_long_rejected(client, app):
                     json={"player_a_id": player_ids[0], "player_b_id": player_ids[1],
                           "team_name": "x" * 101})
     assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Competitions — participant pairing (task 3)
+# ---------------------------------------------------------------------------
+
+def test_confirmed_player_can_propose_own_pair(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "grouping")
+    # Log in as the first confirmed player (dpl0@x.com)
+    client.post("/api/auth/logout")
+    _login(client, "dpl0@x.com", "password123")
+    r = client.post(f"/api/competitions/{cid}/pairs",
+                    json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]})
+    assert r.status_code == 201
+    assert r.get_json()["player_a_id"] == player_ids[0]
+    assert r.get_json()["player_b_id"] == player_ids[1]
+
+
+def test_confirmed_player_cannot_pair_others(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=3)
+    _comp_transition(client, cid, "grouping")
+    # dpl0 tries to pair dpl1 and dpl2 (neither is themselves)
+    client.post("/api/auth/logout")
+    _login(client, "dpl0@x.com", "password123")
+    r = client.post(f"/api/competitions/{cid}/pairs",
+                    json={"player_a_id": player_ids[1], "player_b_id": player_ids[2]})
+    assert r.status_code == 403
+    assert "yourself" in r.get_json()["error"].lower()
+
+
+def test_candidate_cannot_create_pair(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=2)
+    # Add a candidate (not yet confirmed) before transitioning to grouping
+    client.post("/api/auth/logout")
+    _signup(client, "candidate@x.com", "password123")
+    candidate_pid = client.post(f"/api/competitions/{cid}/apply").get_json()["id"]
+    # Transition to grouping as admin
+    client.post("/api/auth/logout")
+    _login(client, "admin@x.com", "password123")
+    _comp_transition(client, cid, "grouping")
+    # Candidate tries to create a pair
+    client.post("/api/auth/logout")
+    _login(client, "candidate@x.com", "password123")
+    r = client.post(f"/api/competitions/{cid}/pairs",
+                    json={"player_a_id": candidate_pid, "player_b_id": player_ids[0]})
+    assert r.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Competitions — auto-pairing on draw transition (task 4)
+# ---------------------------------------------------------------------------
+
+def test_all_unpaired_auto_paired_on_draw_transition(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=4)
+    _comp_transition(client, cid, "grouping")
+    # No manual pairs — all four should be auto-paired
+    r = _comp_transition(client, cid, "draw")
+    assert r.status_code == 200
+    assert r.get_json()["status"] == "draw"
+    pairs = client.get(f"/api/competitions/{cid}/pairs").get_json()
+    assert len(pairs) == 2
+    # Every confirmed player must appear in exactly one pair
+    paired = {p["player_a_id"] for p in pairs} | {p["player_b_id"] for p in pairs}
+    assert paired == set(player_ids)
+
+
+def test_partial_manual_pairs_auto_pair_remaining_on_draw(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=4)
+    _comp_transition(client, cid, "grouping")
+    # Manually pair the first two
+    client.post(f"/api/competitions/{cid}/pairs",
+                json={"player_a_id": player_ids[0], "player_b_id": player_ids[1],
+                      "team_name": "Manual Team"})
+    r = _comp_transition(client, cid, "draw")
+    assert r.status_code == 200
+    pairs = client.get(f"/api/competitions/{cid}/pairs").get_json()
+    assert len(pairs) == 2
+    names = {p["team_name"] for p in pairs}
+    assert "Manual Team" in names
+    # The auto-generated pair must cover the remaining two players
+    all_paired = {p["player_a_id"] for p in pairs} | {p["player_b_id"] for p in pairs}
+    assert all_paired == set(player_ids)

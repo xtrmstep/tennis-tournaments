@@ -151,7 +151,30 @@
         <p v-if="pairError" style="color: red; margin-top: 0.4rem;">{{ pairError }}</p>
       </div>
 
-      <table v-if="pairs.length" style="width: 100%; border-collapse: collapse;">
+      <!-- Propose pair form (confirmed participant who is not yet paired) -->
+      <div v-if="isMyselfUnpaired && !canManage && competition.status === 'grouping'" style="background: #eef5fb; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+        <strong>Propose a partner</strong>
+        <div style="display: flex; gap: 0.5rem; align-items: flex-end; margin-top: 0.5rem; flex-wrap: wrap;">
+          <div>
+            <label style="display: block; font-size: 0.85rem;">Team name (optional)</label>
+            <input v-model="newPair.teamName" maxlength="100" placeholder="e.g. Team Rocket" style="padding: 0.4rem; width: 12rem;" />
+          </div>
+          <div>
+            <label style="display: block; font-size: 0.85rem;">Partner</label>
+            <select v-model="newPair.playerB" style="padding: 0.4rem;">
+              <option value="">Select…</option>
+              <option v-for="p in partnerCandidates" :key="p.id" :value="p.id">
+                {{ p.full_name || p.username || p.user_id }}
+              </option>
+            </select>
+          </div>
+          <button
+            @click="addPair"
+            style="padding: 0.4rem 1rem; background: #1a5fa0; color: white; border: none; cursor: pointer; border-radius: 4px;"
+          >Propose Pair</button>
+        </div>
+        <p v-if="pairError" style="color: red; margin-top: 0.4rem;">{{ pairError }}</p>
+      </div> style="width: 100%; border-collapse: collapse;">
         <thead>
           <tr>
             <th style="text-align: left; padding: 0.4rem; border-bottom: 1px solid #ccc;">#</th>
@@ -320,6 +343,12 @@ const pairedPlayerIds = computed(() => {
 })
 const unpairedPlayers = computed(() =>
   confirmedPlayers.value.filter(p => !pairedPlayerIds.value.has(p.id))
+)
+const isMyselfUnpaired = computed(() =>
+  !!myPlayerEntry.value && !pairedPlayerIds.value.has(myPlayerEntry.value.id)
+)
+const partnerCandidates = computed(() =>
+  unpairedPlayers.value.filter(p => p.id !== myPlayerEntry.value?.id)
 )
 
 // Score inputs keyed by match id
@@ -498,12 +527,14 @@ async function deletePlayer(playerId) {
 
 async function addPair() {
   pairError.value = ''
-  if (!newPair.value.playerA || !newPair.value.playerB) {
+  const playerA = canManage.value ? newPair.value.playerA : (myPlayerEntry.value?.id ?? '')
+  const playerB = newPair.value.playerB
+  if (!playerA || !playerB) {
     pairError.value = 'Select both players.'
     return
   }
   try {
-    await createPair(id, newPair.value.playerA, newPair.value.playerB, newPair.value.teamName || undefined)
+    await createPair(id, playerA, playerB, newPair.value.teamName || undefined)
     newPair.value = { playerA: '', playerB: '', teamName: '' }
     const res = await getCompetitionPairs(id)
     pairs.value = res.data
