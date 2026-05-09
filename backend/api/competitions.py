@@ -6,13 +6,16 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request, session
 
-from models import Participant, PairingMode
+from bracket import generate_bracket
+from models import Participant, PairingMode, Team
 from pairing import generate_teams
+from scheduling import assign_courts
 from ..auth import login_required, moderator_or_admin_required
 from ..extensions import db
 from ..models import (
     AuditCompetitionEvent,
     Competition,
+    CompetitionDraw,
     CompetitionMatch,
     CompetitionPair,
     CompetitionPlayer,
@@ -648,3 +651,113 @@ def delete_pair(competition_id: int, pair_id: int):
     db.session.delete(pair)
     db.session.commit()
     return "", 204
+
+
+# ---------------------------------------------------------------------------
+# Draw generation (bracket + court assignment)
+# ---------------------------------------------------------------------------
+
+@competitions_bp.post("/<int:competition_id>/draw/generate")
+@moderator_or_admin_required
+def generate_draw(competition_id: int):
+    user = _current_user()
+    comp = db.session.get(Competition, competition_id)
+    if not comp:
+        return jsonify({"error": "Competition not found"}), 404
+    if comp.status != "draw":
+        return jsonify({"error": "Bracket can only be generated in draw status."}), 409
+
+    data = request.get_json(silent=True) or {}
+    num_courts = data.get("num_courts")
+    if num_courts is None or not isinstance(num_courts, int) or num_courts < 1:
+        return jsonify({"error": "num_courts must be a positive integer"}), 400
+
+    confirmed = (
+        CompetitionPlayer.query.filter_by(competition_id=comp.id, status="player")
+        .join(CompetitionPlayer.user)
+        .all()
+    )
+
+    if comp.event_type == "singles":
+        if len(confirmed) < 2:
+            return jsonify({"error": "Need at least 2 confirmed players to generate a bracket."}), 409
+        teams: list[Team] = []
+        unit_map: dict[str, dict] = {}
+        for idx, cp in enumerate(confirmed):
+            tid = string.ascii_uppercase[idx % 26]
+            skill = (cp.user.skill_level or 0) * 10
+            p = Participant(id=str(cp.id), name="", gender="", skill_percent=skill)
+            teams.append(Team(team_id=tid, player1=p, player2=p))
+            label = cp.user.full_name or cp.user.username or f"Player {cp.id}"
+            unit_map[tid] = {"unit_id": cp.id, "label": label}
+    else:
+        pairs = CompetitionPair.query.filter_by(competition_id=comp.id).all()
+        if len(pairs) < 2:
+            return jsonify({"error": "Need at least 2 pairs to generate a bracket."}), 409
+        teams = []
+        unit_map = {}
+        for idx, pair in enumerate(pairs):
+            tid = string.ascii_uppercase[idx % 26]
+            pa = pair.player_a
+            pb = pair.player_b
+            skill_a = (pa.user.skill_level or 0) * 10 if pa and pa.user else 0
+            skill_b = (pb.user.skill_level or 0) * 10 if pb and pb.user else 0
+            p1 = Participant(id=str(pa.id if pa else 0), name="", gender="", skill_percent=skill_a)
+            p2 = Participant(id=str(pb.id if pb else 0), name="", gender="", skill_percent=skill_b)
+            teams.append(Team(team_id=tid, player1=p1, player2=p2))
+            unit_map[tid] = {"unit_id": pair.id, "label": pair.team_name or tid}
+
+    bracket_matches = generate_bracket(teams)
+    assign_courts(bracket_matches, num_courts)
+
+    slots = []
+    for m in bracket_matches:
+        def _resolve(label: str) -> tuple[int | None, str]:
+            info = unit_map.get(label)
+            if info:
+                return info["unit_id"], info["label"]
+            return None, label
+
+        uid_a, lbl_a = _resolve(m.team1)
+        uid_b, lbl_b = _resolve(m.team2)
+        slots.append({
+            "match_id": m.match_id,
+            "round": m.round_name,
+            "court": m.court,
+            "time_slot": m.time_slot,
+            "label_a": lbl_a,
+            "label_b": lbl_b,
+            "unit_a_id": uid_a,
+            "unit_b_id": uid_b,
+        })
+
+    existing = CompetitionDraw.query.filter_by(competition_id=comp.id).first()
+    if existing:
+        existing.num_courts = num_courts
+        existing.bracket_json = json.dumps(slots)
+        existing.generated_at = datetime.now(timezone.utc)
+        draw = existing
+    else:
+        draw = CompetitionDraw(
+            competition_id=comp.id,
+            num_courts=num_courts,
+            bracket_json=json.dumps(slots),
+        )
+        db.session.add(draw)
+
+    _audit(comp.id, user.id, "draw_generated", {"num_courts": num_courts})
+    db.session.commit()
+    return jsonify(draw.to_dict()), 200
+
+
+@competitions_bp.get("/<int:competition_id>/draw")
+@login_required
+def get_draw(competition_id: int):
+    comp = db.session.get(Competition, competition_id)
+    if not comp:
+        return jsonify({"error": "Competition not found"}), 404
+    draw = CompetitionDraw.query.filter_by(competition_id=comp.id).first()
+    if not draw:
+        return jsonify({"error": "No draw generated yet."}), 404
+    return jsonify(draw.to_dict()), 200
+

@@ -1573,3 +1573,131 @@ def test_partial_manual_pairs_auto_pair_remaining_on_draw(client, app):
     # The auto-generated pair must cover the remaining two players
     all_paired = {p["player_a_id"] for p in pairs} | {p["player_b_id"] for p in pairs}
     assert all_paired == set(player_ids)
+
+
+# ---------------------------------------------------------------------------
+# Draw generation (bracket + court assignment)
+# ---------------------------------------------------------------------------
+
+def test_generate_draw_singles_basic(client, app):
+    """2 singles players → draw generates 1 match slot with court/time_slot assigned."""
+    cid, player_ids = _comp_setup_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "draw")
+    r = client.post(f"/api/competitions/{cid}/draw/generate", json={"num_courts": 1})
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["num_courts"] == 1
+    slots = data["slots"]
+    assert len(slots) == 1
+    s = slots[0]
+    assert s["court"] == 1
+    assert s["time_slot"] == 1
+    assert s["round"] == "Final"
+    assert s["unit_a_id"] is not None
+    assert s["unit_b_id"] is not None
+
+
+def test_generate_draw_includes_court_assignment(client, app):
+    """4 singles players, 2 courts → courts ≤ 2, time slots assigned."""
+    cid, player_ids = _comp_setup_with_players(client, app, num_players=4)
+    _comp_transition(client, cid, "draw")
+    r = client.post(f"/api/competitions/{cid}/draw/generate", json={"num_courts": 2})
+    assert r.status_code == 200
+    data = r.get_json()
+    slots = data["slots"]
+    assert len(slots) >= 3  # at minimum 2 semis + 1 final (+ possible 3rd place)
+    for s in slots:
+        assert 1 <= s["court"] <= 2
+        assert s["time_slot"] >= 1
+
+
+def test_generate_draw_doubles_basic(client, app):
+    """4 doubles players (2 pairs) → draw generates 1 match slot with pair unit_ids."""
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=4)
+    _comp_transition(client, cid, "grouping")
+    client.post(f"/api/competitions/{cid}/pairs",
+                json={"player_a_id": player_ids[0], "player_b_id": player_ids[1],
+                      "team_name": "Alpha"})
+    client.post(f"/api/competitions/{cid}/pairs",
+                json={"player_a_id": player_ids[2], "player_b_id": player_ids[3],
+                      "team_name": "Beta"})
+    _comp_transition(client, cid, "draw")
+    r = client.post(f"/api/competitions/{cid}/draw/generate", json={"num_courts": 1})
+    assert r.status_code == 200
+    slots = r.get_json()["slots"]
+    assert len(slots) == 1
+    s = slots[0]
+    assert s["unit_a_id"] is not None
+    assert s["unit_b_id"] is not None
+    assert s["label_a"] in ("Alpha", "Beta")
+    assert s["label_b"] in ("Alpha", "Beta")
+
+
+def test_generate_draw_invalid_courts_zero(client, app):
+    """num_courts=0 is rejected with 400."""
+    cid, _ = _comp_setup_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "draw")
+    r = client.post(f"/api/competitions/{cid}/draw/generate", json={"num_courts": 0})
+    assert r.status_code == 400
+
+
+def test_generate_draw_invalid_courts_missing(client, app):
+    """Missing num_courts field is rejected with 400."""
+    cid, _ = _comp_setup_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "draw")
+    r = client.post(f"/api/competitions/{cid}/draw/generate", json={})
+    assert r.status_code == 400
+
+
+def test_generate_draw_wrong_state_fails(client, app):
+    """Generate draw while competition is published (not draw) returns 409."""
+    cid, _ = _comp_setup_with_players(client, app, num_players=2)
+    r = client.post(f"/api/competitions/{cid}/draw/generate", json={"num_courts": 1})
+    assert r.status_code == 409
+
+
+def test_generate_draw_regular_user_fails(client, app):
+    """Regular user cannot generate a draw."""
+    cid, player_ids = _comp_setup_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "draw")
+    client.post("/api/auth/logout")
+    _login(client, "player0@x.com", "password123")
+    r = client.post(f"/api/competitions/{cid}/draw/generate", json={"num_courts": 1})
+    assert r.status_code == 403
+
+
+def test_get_draw_not_found(client, app):
+    """GET /draw before any generation returns 404."""
+    cid, _ = _comp_setup_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "draw")
+    r = client.get(f"/api/competitions/{cid}/draw")
+    assert r.status_code == 404
+
+
+def test_get_draw_returns_schema(client, app):
+    """GET /draw after generation returns 200 with expected structure."""
+    cid, _ = _comp_setup_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "draw")
+    client.post(f"/api/competitions/{cid}/draw/generate", json={"num_courts": 1})
+    r = client.get(f"/api/competitions/{cid}/draw")
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["competition_id"] == cid
+    assert data["num_courts"] == 1
+    assert isinstance(data["slots"], list)
+    assert "generated_at" in data
+
+
+def test_generate_draw_upserts_on_regenerate(client, app):
+    """Second generate call updates the existing draw record (upsert)."""
+    cid, _ = _comp_setup_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "draw")
+    client.post(f"/api/competitions/{cid}/draw/generate", json={"num_courts": 1})
+    r = client.post(f"/api/competitions/{cid}/draw/generate", json={"num_courts": 3})
+    assert r.status_code == 200
+    assert r.get_json()["num_courts"] == 3
+    # Only one draw record should exist
+    r2 = client.get(f"/api/competitions/{cid}/draw")
+    assert r2.status_code == 200
+    assert r2.get_json()["num_courts"] == 3
+

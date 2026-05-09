@@ -101,3 +101,9 @@ export const createPair = (competitionId, playerAId, playerBId, teamName) =>
 
 export const deletePair = (competitionId, pairId) =>
   api.delete(`/competitions/${competitionId}/pairs/${pairId}`)
+
+export const generateCompetitionDraw = (competitionId, numCourts) =>
+  api.post(`/competitions/${competitionId}/draw/generate`, { num_courts: numCourts })
+
+export const getCompetitionDraw = (competitionId) =>
+  api.get(`/competitions/${competitionId}/draw`)

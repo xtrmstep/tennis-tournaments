@@ -128,6 +128,9 @@ class Competition(db.Model):
     matches = db.relationship(
         "CompetitionMatch", back_populates="competition", cascade="all, delete-orphan"
     )
+    draw = db.relationship(
+        "CompetitionDraw", back_populates="competition", uselist=False, cascade="all, delete-orphan"
+    )
 
     def to_dict(self) -> dict:
         return {
@@ -266,6 +269,30 @@ class CompetitionPair(db.Model):
                 (pb.user.full_name or pb.user.username) if pb and pb.user else f"Player {self.player_b_id}"
             ),
             "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class CompetitionDraw(db.Model):
+    __tablename__ = "competition_draws"
+    id: int = db.Column(db.Integer, primary_key=True)
+    competition_id: int = db.Column(
+        db.Integer, db.ForeignKey("competitions.id"), nullable=False, unique=True
+    )
+    num_courts: int = db.Column(db.Integer, nullable=False)
+    bracket_json: str = db.Column(db.Text, nullable=False)
+    generated_at: datetime = db.Column(
+        db.DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+    competition = db.relationship("Competition", back_populates="draw")
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "competition_id": self.competition_id,
+            "num_courts": self.num_courts,
+            "slots": json.loads(self.bracket_json),
+            "generated_at": self.generated_at.isoformat() if self.generated_at else None,
         }
 
 

@@ -206,6 +206,54 @@
     <section v-if="['draw', 'match', 'finished'].includes(competition.status)">
       <h3 style="margin-bottom: 0.5rem;">Matches</h3>
 
+      <!-- Generate bracket panel (admin/mod, draw state) -->
+      <div v-if="canManage && competition.status === 'draw'" style="background: #f5f5f5; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+        <strong>Generate Bracket</strong>
+        <div style="display: flex; gap: 0.5rem; align-items: flex-end; margin-top: 0.5rem; flex-wrap: wrap;">
+          <div>
+            <label style="display: block; font-size: 0.85rem;">Number of courts</label>
+            <input
+              v-model.number="numCourts"
+              type="number"
+              min="1"
+              style="padding: 0.4rem; width: 80px;"
+            />
+          </div>
+          <button
+            @click="doGenerateDraw"
+            style="padding: 0.4rem 1rem; background: #1a6ea0; color: white; border: none; cursor: pointer; border-radius: 4px;"
+          >Generate</button>
+        </div>
+        <p v-if="drawError" style="color: red; margin-top: 0.4rem;">{{ drawError }}</p>
+      </div>
+
+      <!-- Bracket table -->
+      <div v-if="draw" style="margin-bottom: 1.5rem;">
+        <h4 style="margin-bottom: 0.4rem;">Bracket ({{ draw.num_courts }} court{{ draw.num_courts === 1 ? '' : 's' }})</h4>
+        <table style="width: 100%; border-collapse: collapse;">
+          <thead>
+            <tr>
+              <th style="text-align: left; padding: 0.4rem; border-bottom: 1px solid #ccc;">Match</th>
+              <th style="text-align: left; padding: 0.4rem; border-bottom: 1px solid #ccc;">Round</th>
+              <th style="text-align: left; padding: 0.4rem; border-bottom: 1px solid #ccc;">Court</th>
+              <th style="text-align: left; padding: 0.4rem; border-bottom: 1px solid #ccc;">Slot</th>
+              <th style="text-align: left; padding: 0.4rem; border-bottom: 1px solid #ccc;">Side A</th>
+              <th style="text-align: left; padding: 0.4rem; border-bottom: 1px solid #ccc;">Side B</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="slot in draw.slots" :key="slot.match_id">
+              <td style="padding: 0.4rem; font-weight: 600;">{{ slot.match_id }}</td>
+              <td style="padding: 0.4rem;">{{ slot.round }}</td>
+              <td style="padding: 0.4rem;">{{ slot.court }}</td>
+              <td style="padding: 0.4rem;">{{ slot.time_slot }}</td>
+              <td style="padding: 0.4rem;">{{ slot.label_a }}</td>
+              <td style="padding: 0.4rem;">{{ slot.label_b }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <!-- Create match form (admin/mod, draw state) -->
       <div v-if="canManage && competition.status === 'draw'" style="background: #f5f5f5; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
         <strong>Create Match</strong>
@@ -308,6 +356,8 @@ import {
   getCompetitionPairs,
   createPair,
   deletePair,
+  generateCompetitionDraw,
+  getCompetitionDraw,
 } from '../services/api'
 
 const route = useRoute()
@@ -373,6 +423,11 @@ const matchError = ref('')
 const newPair = ref({ playerA: '', playerB: '', teamName: '' })
 const pairError = ref('')
 
+// Draw generation
+const draw = ref(null)
+const numCourts = ref(2)
+const drawError = ref('')
+
 // Score
 const scoreError = ref('')
 
@@ -434,6 +489,10 @@ async function load() {
       const matchRes = await getCompetitionMatches(id)
       matches.value = matchRes.data
       initScoreInputs()
+      try {
+        const drawRes = await getCompetitionDraw(id)
+        draw.value = drawRes.data
+      } catch { /* no draw yet */ }
     }
   } catch {
     loadError.value = 'Failed to load competition.'
@@ -464,6 +523,10 @@ async function doTransition() {
       const matchRes = await getCompetitionMatches(id)
       matches.value = matchRes.data
       initScoreInputs()
+      try {
+        const drawRes = await getCompetitionDraw(id)
+        draw.value = drawRes.data
+      } catch { /* no draw yet */ }
     }
   } catch (e) {
     transitionError.value = e.response?.data?.error || 'Transition failed.'
@@ -550,6 +613,16 @@ async function removePair(pairId) {
     pairs.value = res.data
   } catch (e) {
     pairError.value = e.response?.data?.error || 'Failed to remove pair.'
+  }
+}
+
+async function doGenerateDraw() {
+  drawError.value = ''
+  try {
+    const res = await generateCompetitionDraw(id, numCourts.value)
+    draw.value = res.data
+  } catch (e) {
+    drawError.value = e.response?.data?.error || 'Failed to generate draw.'
   }
 }
 
