@@ -13,15 +13,37 @@ class User(db.Model):
     id: int = db.Column(db.Integer, primary_key=True)
     email: str = db.Column(db.String(200), unique=True, nullable=False)
     password_hash: str = db.Column(db.String(256), nullable=False)
+    full_name: str | None = db.Column(db.String(200), nullable=True)
+    username: str | None = db.Column(db.String(100), unique=True, nullable=True)
+    skill_level: int | None = db.Column(db.Integer, nullable=True)  # 0-10
+    gender: str | None = db.Column(db.String(50), nullable=True)
     created_at: datetime = db.Column(
         db.DateTime, default=lambda: datetime.now(timezone.utc)
     )
+
+    @property
+    def profile_complete(self) -> bool:
+        return all(
+            f is not None
+            for f in (self.full_name, self.username, self.skill_level, self.gender)
+        )
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "email": self.email,
+            "full_name": self.full_name,
+            "username": self.username,
+            "skill_level": self.skill_level,
+            "gender": self.gender,
+            "profile_complete": self.profile_complete,
+        }
 
 
 class Person(db.Model):

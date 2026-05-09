@@ -35,7 +35,7 @@ async function handleSubmit() {
   loading.value = true
   try {
     await signup(email.value, password.value)
-    router.push('/people')
+    router.push('/profile')
   } catch (e) {
     error.value = e.response?.data?.error || 'Sign up failed'
   } finally {

@@ -38,14 +38,20 @@ This repository contains a Python 3.12 CLI and a Flask + Vue 3 web application f
 - `frontend/vite.config.js` — Vite config; dev server proxies `/api` to `http://localhost:5000`.
 - `frontend/index.html` — HTML entry point.
 - `frontend/src/main.js` — mounts Vue app with router.
-- `frontend/src/App.vue` — root component with navigation bar.
-- `frontend/src/router/index.js` — routes and auth navigation guard.
+- `frontend/src/App.vue` — root component with navigation bar shown to authenticated users.
+- `frontend/src/router/index.js` — route definitions and navigation guard; unauthenticated users are redirected to `/login`; authenticated users with an incomplete profile are redirected to `/profile`.
 - `frontend/src/services/api.js` — axios wrapper for all backend calls.
-- `frontend/src/views/LoginView.vue` — login form.
-- `frontend/src/views/SignUpView.vue` — sign-up form.
-- `frontend/src/views/PeopleView.vue` — people list with inline rating editing.
-- `frontend/src/views/PersonFormView.vue` — add-person form (name, skill, photo).
-- `frontend/src/views/SortingView.vue` — mode selection (singles/doubles) and sort execution.
+
+#### Frontend pages
+
+| Route | View file | Access | Description |
+|---|---|---|---|
+| `/login` | `src/views/LoginView.vue` | Public | Email + password login form. Redirects to `/profile` if profile incomplete, otherwise to `/people`. |
+| `/signup` | `src/views/SignUpView.vue` | Public | New account registration form. Always redirects to `/profile` after signup. |
+| `/profile` | `src/views/ProfileView.vue` | Authenticated | View and edit profile: full name, username, skill level, gender. Email shown read-only. Required before accessing other pages. |
+| `/people` | `src/views/PeopleView.vue` | Authenticated, profile complete | List of all people with inline rating editing. |
+| `/people/new` | `src/views/PersonFormView.vue` | Authenticated, profile complete | Form to add a new person (name, skill, photo). |
+| `/sorting` | `src/views/SortingView.vue` | Authenticated, profile complete | Mode selection (singles/doubles) and sort execution. |
 
 ### Tests (`tests/`)
 

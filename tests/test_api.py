@@ -104,12 +104,70 @@ def test_me_authenticated(client):
     _auth_client(client)
     r = client.get("/api/auth/me")
     assert r.status_code == 200
-    assert r.get_json()["email"] == "test@example.com"
+    data = r.get_json()
+    assert data["email"] == "test@example.com"
+    assert data["profile_complete"] is False
 
 
 def test_me_unauthenticated(client):
     r = client.get("/api/auth/me")
     assert r.status_code == 401
+
+
+# ---------------------------------------------------------------------------
+# Profile
+# ---------------------------------------------------------------------------
+
+def _complete_profile(client, full_name="Alice Smith", username="alice", skill_level=5, gender="female"):
+    return client.put(
+        "/api/auth/profile",
+        json={"full_name": full_name, "username": username, "skill_level": skill_level, "gender": gender},
+    )
+
+
+def test_update_profile_success(client):
+    _auth_client(client)
+    r = _complete_profile(client)
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["full_name"] == "Alice Smith"
+    assert data["username"] == "alice"
+    assert data["skill_level"] == 5
+    assert data["gender"] == "female"
+    assert data["profile_complete"] is True
+
+
+def test_update_profile_missing_full_name(client):
+    _auth_client(client)
+    r = client.put("/api/auth/profile", json={"username": "alice", "skill_level": 5, "gender": "female"})
+    assert r.status_code == 400
+
+
+def test_update_profile_invalid_skill_level(client):
+    _auth_client(client)
+    r = client.put("/api/auth/profile", json={"full_name": "Alice", "username": "alice", "skill_level": 11, "gender": "female"})
+    assert r.status_code == 400
+
+
+def test_update_profile_duplicate_username(client):
+    _signup(client, email="user1@example.com")
+    _complete_profile(client, username="taken")
+    client.post("/api/auth/logout")
+    _signup(client, email="user2@example.com")
+    r = client.put("/api/auth/profile", json={"full_name": "Bob", "username": "taken", "skill_level": 3, "gender": "male"})
+    assert r.status_code == 400
+
+
+def test_update_profile_unauthenticated(client):
+    r = client.put("/api/auth/profile", json={"full_name": "Alice", "username": "alice", "skill_level": 5, "gender": "female"})
+    assert r.status_code == 401
+
+
+def test_me_profile_complete_after_update(client):
+    _auth_client(client)
+    _complete_profile(client)
+    r = client.get("/api/auth/me")
+    assert r.get_json()["profile_complete"] is True
 
 
 # ---------------------------------------------------------------------------

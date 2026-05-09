@@ -40,7 +40,7 @@ def signup():
     db.session.commit()
 
     session["user_id"] = user.id
-    return jsonify({"id": user.id, "email": user.email}), 201
+    return jsonify(user.to_dict()), 201
 
 
 @auth_bp.post("/login")
@@ -57,7 +57,7 @@ def login():
         return jsonify({"error": "Invalid credentials"}), 401
 
     session["user_id"] = user.id
-    return jsonify({"id": user.id, "email": user.email}), 200
+    return jsonify(user.to_dict()), 200
 
 
 @auth_bp.post("/logout")
@@ -73,4 +73,40 @@ def me():
     if not user:
         session.clear()
         return jsonify({"error": "User not found"}), 401
-    return jsonify({"id": user.id, "email": user.email}), 200
+    return jsonify(user.to_dict()), 200
+
+
+@auth_bp.put("/profile")
+@login_required
+def update_profile():
+    user = db.session.get(User, session["user_id"])
+    if not user:
+        session.clear()
+        return jsonify({"error": "User not found"}), 401
+
+    data = request.get_json(silent=True) or {}
+    full_name = (data.get("full_name") or "").strip()
+    username = (data.get("username") or "").strip()
+    skill_level = data.get("skill_level")
+    gender = (data.get("gender") or "").strip()
+
+    if not full_name:
+        return jsonify({"error": "Full name is required"}), 400
+    if not username:
+        return jsonify({"error": "Username is required"}), 400
+    if skill_level is None or not isinstance(skill_level, int) or not (0 <= skill_level <= 10):
+        return jsonify({"error": "Skill level must be an integer from 0 to 10"}), 400
+    if not gender:
+        return jsonify({"error": "Gender is required"}), 400
+
+    existing = User.query.filter_by(username=username).first()
+    if existing and existing.id != user.id:
+        return jsonify({"error": "Username already taken"}), 400
+
+    user.full_name = full_name
+    user.username = username
+    user.skill_level = skill_level
+    user.gender = gender
+    db.session.commit()
+
+    return jsonify(user.to_dict()), 200

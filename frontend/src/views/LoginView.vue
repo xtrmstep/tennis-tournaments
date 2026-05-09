@@ -34,8 +34,8 @@ async function handleSubmit() {
   error.value = ''
   loading.value = true
   try {
-    await login(email.value, password.value)
-    router.push('/people')
+    const res = await login(email.value, password.value)
+    router.push(res.data.profile_complete ? '/people' : '/profile')
   } catch (e) {
     error.value = e.response?.data?.error || 'Login failed'
   } finally {

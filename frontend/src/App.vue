@@ -4,6 +4,7 @@
       <strong>🎾 Tennis Tournaments</strong>
       <RouterLink to="/people" style="color: white;">People</RouterLink>
       <RouterLink to="/sorting" style="color: white;">Sorting</RouterLink>
+      <RouterLink to="/profile" style="color: white;">Profile</RouterLink>
       <button @click="handleLogout" style="margin-left: auto; cursor: pointer;">Logout</button>
     </nav>
     <main style="padding: 1rem;">
