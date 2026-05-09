@@ -602,3 +602,236 @@ def test_disabled_user_cannot_login(client, app):
     client.post("/api/auth/logout")
     r = _login(client, email="disabled@example.com", password="password123")
     assert r.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Admin - is_moderator patch
+# ---------------------------------------------------------------------------
+
+def test_admin_set_moderator(client, app):
+    _signup(client, email="target@example.com", password="password123")
+    client.post("/api/auth/logout")
+    _signup(client)
+    _make_admin(app)
+    users = client.get("/api/admin/users").get_json()
+    target = next(u for u in users if u["email"] == "target@example.com")
+    r = client.patch(f"/api/admin/users/{target['id']}", json={"is_moderator": True})
+    assert r.status_code == 200
+    assert r.get_json()["is_moderator"] is True
+
+
+def test_admin_unset_moderator(client, app):
+    _signup(client, email="target@example.com", password="password123")
+    client.post("/api/auth/logout")
+    _signup(client)
+    _make_admin(app)
+    users = client.get("/api/admin/users").get_json()
+    target = next(u for u in users if u["email"] == "target@example.com")
+    client.patch(f"/api/admin/users/{target['id']}", json={"is_moderator": True})
+    r = client.patch(f"/api/admin/users/{target['id']}", json={"is_moderator": False})
+    assert r.status_code == 200
+    assert r.get_json()["is_moderator"] is False
+
+
+def test_admin_patch_invalid_is_moderator_type(client, app):
+    _signup(client, email="target@example.com", password="password123")
+    client.post("/api/auth/logout")
+    _signup(client)
+    _make_admin(app)
+    users = client.get("/api/admin/users").get_json()
+    target = next(u for u in users if u["email"] == "target@example.com")
+    r = client.patch(f"/api/admin/users/{target['id']}", json={"is_moderator": "yes"})
+    assert r.status_code == 400
+
+
+def test_moderator_cannot_access_admin_users(client, app):
+    _signup(client, email="mod@example.com", password="password123")
+    from backend.models import User
+    from backend.extensions import db
+    with app.app_context():
+        user = User.query.filter_by(email="mod@example.com").first()
+        user.is_moderator = True
+        db.session.commit()
+    r = client.get("/api/admin/users")
+    assert r.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Admin - update user profile
+# ---------------------------------------------------------------------------
+
+def test_admin_update_user_profile_success(client, app):
+    _signup(client, email="target@example.com", password="password123")
+    client.post("/api/auth/logout")
+    _signup(client)
+    _make_admin(app)
+    users = client.get("/api/admin/users").get_json()
+    target = next(u for u in users if u["email"] == "target@example.com")
+    r = client.put(
+        f"/api/admin/users/{target['id']}/profile",
+        json={
+            "email": "newemail@example.com",
+            "full_name": "New Name",
+            "username": "newuser",
+            "skill_level": 7,
+            "gender": "male",
+        },
+    )
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["email"] == "newemail@example.com"
+    assert data["full_name"] == "New Name"
+    assert data["username"] == "newuser"
+    assert data["skill_level"] == 7
+    assert data["gender"] == "male"
+
+
+def test_admin_update_user_profile_duplicate_email(client, app):
+    _signup(client, email="other@example.com", password="password123")
+    client.post("/api/auth/logout")
+    _signup(client, email="target@example.com", password="password123")
+    client.post("/api/auth/logout")
+    _signup(client)
+    _make_admin(app)
+    users = client.get("/api/admin/users").get_json()
+    target = next(u for u in users if u["email"] == "target@example.com")
+    r = client.put(
+        f"/api/admin/users/{target['id']}/profile",
+        json={
+            "email": "other@example.com",
+            "full_name": "Name",
+            "username": "uniqueuser",
+            "skill_level": 5,
+            "gender": "female",
+        },
+    )
+    assert r.status_code == 400
+
+
+def test_admin_update_user_profile_duplicate_username(client, app):
+    _signup(client, email="other@example.com", password="password123")
+    _complete_profile(client, username="takenname")
+    client.post("/api/auth/logout")
+    _signup(client, email="target@example.com", password="password123")
+    client.post("/api/auth/logout")
+    _signup(client)
+    _make_admin(app)
+    users = client.get("/api/admin/users").get_json()
+    target = next(u for u in users if u["email"] == "target@example.com")
+    r = client.put(
+        f"/api/admin/users/{target['id']}/profile",
+        json={
+            "email": "target@example.com",
+            "full_name": "Name",
+            "username": "takenname",
+            "skill_level": 5,
+            "gender": "female",
+        },
+    )
+    assert r.status_code == 400
+
+
+def test_admin_update_user_profile_unauthenticated(client):
+    r = client.put(
+        "/api/admin/users/1/profile",
+        json={
+            "email": "a@b.com",
+            "full_name": "Name",
+            "username": "u",
+            "skill_level": 5,
+            "gender": "male",
+        },
+    )
+    assert r.status_code == 401
+
+
+def test_admin_update_user_profile_non_admin(client):
+    _auth_client(client)
+    r = client.put(
+        "/api/admin/users/1/profile",
+        json={
+            "email": "a@b.com",
+            "full_name": "Name",
+            "username": "u",
+            "skill_level": 5,
+            "gender": "male",
+        },
+    )
+    assert r.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Admin - update user skill
+# ---------------------------------------------------------------------------
+
+def test_admin_update_skill_valid(client, app):
+    _signup(client, email="target@example.com", password="password123")
+    client.post("/api/auth/logout")
+    _signup(client)
+    _make_admin(app)
+    users = client.get("/api/admin/users").get_json()
+    target = next(u for u in users if u["email"] == "target@example.com")
+    r = client.patch(f"/api/admin/users/{target['id']}/skill", json={"skill_level": 5})
+    assert r.status_code == 200
+    assert r.get_json()["skill_level"] == 5
+
+
+def test_admin_update_skill_zero(client, app):
+    _signup(client, email="target@example.com", password="password123")
+    client.post("/api/auth/logout")
+    _signup(client)
+    _make_admin(app)
+    users = client.get("/api/admin/users").get_json()
+    target = next(u for u in users if u["email"] == "target@example.com")
+    r = client.patch(f"/api/admin/users/{target['id']}/skill", json={"skill_level": 0})
+    assert r.status_code == 200
+    assert r.get_json()["skill_level"] == 0
+
+
+def test_admin_update_skill_out_of_range(client, app):
+    _signup(client, email="target@example.com", password="password123")
+    client.post("/api/auth/logout")
+    _signup(client)
+    _make_admin(app)
+    users = client.get("/api/admin/users").get_json()
+    target = next(u for u in users if u["email"] == "target@example.com")
+    r = client.patch(f"/api/admin/users/{target['id']}/skill", json={"skill_level": 11})
+    assert r.status_code == 400
+
+
+def test_admin_update_skill_invalid_type(client, app):
+    _signup(client, email="target@example.com", password="password123")
+    client.post("/api/auth/logout")
+    _signup(client)
+    _make_admin(app)
+    users = client.get("/api/admin/users").get_json()
+    target = next(u for u in users if u["email"] == "target@example.com")
+    r = client.patch(f"/api/admin/users/{target['id']}/skill", json={"skill_level": "five"})
+    assert r.status_code == 400
+
+
+def test_admin_update_skill_non_admin(client):
+    _auth_client(client)
+    r = client.patch("/api/admin/users/1/skill", json={"skill_level": 5})
+    assert r.status_code == 403
+
+
+def test_admin_update_skill_not_found(client, app):
+    _admin_client(client, app)
+    r = client.patch("/api/admin/users/99999/skill", json={"skill_level": 5})
+    assert r.status_code == 404
+
+
+def test_admin_update_user_profile_not_found(client, app):
+    _admin_client(client, app)
+    r = client.put(
+        "/api/admin/users/99999/profile",
+        json={
+            "email": "a@b.com",
+            "full_name": "Name",
+            "username": "u",
+            "skill_level": 5,
+            "gender": "male",
+        },
+    )
+    assert r.status_code == 404

@@ -40,7 +40,22 @@
           </td>
           <td style="padding: 0.5rem;">{{ user.username || '—' }}</td>
           <td style="padding: 0.5rem;">{{ user.full_name || '—' }}</td>
-          <td style="padding: 0.5rem;">{{ user.skill_level ?? '—' }}</td>
+          <td style="padding: 0.5rem;">
+            <template v-if="isAdmin">
+              <input
+                type="number"
+                min="0"
+                max="10"
+                :value="pendingSkill[user.id] ?? user.skill_level ?? ''"
+                @input="pendingSkill[user.id] = $event.target.valueAsNumber"
+                @blur="saveSkill(user)"
+                @keyup.enter="$event.target.blur()"
+                style="width: 64px; padding: 0.2rem;"
+              />
+              <span v-if="skillError[user.id]" style="color: red; font-size: 0.8rem; margin-left: 0.3rem;">{{ skillError[user.id] }}</span>
+            </template>
+            <template v-else>{{ user.skill_level ?? '—' }}</template>
+          </td>
           <td style="padding: 0.5rem;">{{ user.gender || '—' }}</td>
         </tr>
       </tbody>
@@ -52,12 +67,15 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { getUsers } from '../services/api'
+import { getUsers, getMe, adminUpdateUserSkill } from '../services/api'
 
 const users = ref([])
 const loading = ref(false)
 const error = ref('')
 const search = ref('')
+const isAdmin = ref(false)
+const pendingSkill = ref({})
+const skillError = ref({})
 
 const filtered = computed(() => {
   const q = search.value.trim().toLowerCase()
@@ -73,11 +91,31 @@ function initials(user) {
   return name.split(' ').map(w => w[0] || '').join('').slice(0, 2).toUpperCase() || '?'
 }
 
+async function saveSkill(user) {
+  const raw = pendingSkill.value[user.id]
+  if (raw === undefined || raw === user.skill_level) return
+
+  if (!Number.isInteger(raw) || raw < 0 || raw > 10) {
+    skillError.value[user.id] = '0–10'
+    return
+  }
+
+  try {
+    const res = await adminUpdateUserSkill(user.id, raw)
+    user.skill_level = res.data.skill_level
+    delete pendingSkill.value[user.id]
+    delete skillError.value[user.id]
+  } catch {
+    skillError.value[user.id] = 'Failed'
+  }
+}
+
 onMounted(async () => {
   loading.value = true
   try {
-    const res = await getUsers()
-    users.value = res.data
+    const [meRes, usersRes] = await Promise.all([getMe(), getUsers()])
+    isAdmin.value = meRes.data.is_admin === true
+    users.value = usersRes.data
   } catch {
     error.value = 'Failed to load people'
   } finally {

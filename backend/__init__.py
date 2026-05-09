@@ -5,7 +5,7 @@ import os
 from flask import Flask
 
 from .config import Config
-from .extensions import db
+from .extensions import db, migrate
 
 
 def create_app(config: dict | None = None) -> Flask:
@@ -15,6 +15,7 @@ def create_app(config: dict | None = None) -> Flask:
         app.config.update(config)
 
     db.init_app(app)
+    migrate.init_app(app, db)
 
     from .auth import auth_bp
     from .api.people import people_bp
@@ -32,6 +33,15 @@ def create_app(config: dict | None = None) -> Flask:
         # Ensure uploads directory exists
         uploads_dir = os.path.join(app.instance_path, "uploads")
         os.makedirs(uploads_dir, exist_ok=True)
-        db.create_all()
+
+        if app.config.get("TESTING"):
+            # In-memory SQLite used by tests: create tables directly so tests
+            # don't depend on migration files being present.
+            db.create_all()
+        else:
+            # All other environments (PostgreSQL, local SQLite dev): apply all
+            # pending Alembic migrations automatically on startup.
+            from flask_migrate import upgrade
+            upgrade()
 
     return app

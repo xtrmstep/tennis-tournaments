@@ -19,6 +19,7 @@ class User(db.Model):
     gender: str | None = db.Column(db.String(50), nullable=True)
     is_active: bool = db.Column(db.Boolean, nullable=False, default=True)
     is_admin: bool = db.Column(db.Boolean, nullable=False, default=False)
+    is_moderator: bool = db.Column(db.Boolean, nullable=False, default=False)
     created_at: datetime = db.Column(
         db.DateTime, default=lambda: datetime.now(timezone.utc)
     )
@@ -48,6 +49,7 @@ class User(db.Model):
             "profile_complete": self.profile_complete,
             "is_active": self.is_active,
             "is_admin": self.is_admin,
+            "is_moderator": self.is_moderator,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

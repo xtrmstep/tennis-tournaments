@@ -5,6 +5,7 @@ instance/
 *.db
 .git
 .gitignore
+.venv/
 frontend/
 tests/
 out/

@@ -44,4 +44,9 @@ export const adminListUsers = () => api.get('/admin/users')
 
 export const adminPatchUser = (id, data) => api.patch(`/admin/users/${id}`, data)
 
+export const adminUpdateUserSkill = (id, skillLevel) =>
+  api.patch(`/admin/users/${id}/skill`, { skill_level: skillLevel })
+
+export const adminUpdateUserProfile = (id, data) => api.put(`/admin/users/${id}/profile`, data)
+
 export const adminDeleteUser = (id) => api.delete(`/admin/users/${id}`)

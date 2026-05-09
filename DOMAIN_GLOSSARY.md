@@ -43,9 +43,9 @@ Main rules:
 Roles define what a user is allowed to do in the system.
 
 Main roles:
-- **Website Admin**
-- **Regular User**
-- **Event Moderator**
+- **Website Admin** — full control over users and website management.
+- **Regular User** — can browse content and participate in events.
+- **Event Moderator** — can manage competition-related data for assigned events; has no access to user management.
 
 A user may have more than one role if needed.
 
@@ -80,7 +80,12 @@ A user assigned to manage a specific event or competition.
 
 Main permissions: edit assigned events, manage event participants, approve/reject/remove participants, run sorting or draw generation, manage teams or pairs, update event status, record or adjust results.
 
-Main restrictions: manages only assigned events, no global admin rights, cannot assign the Website Admin role, cannot modify unrelated events.
+Main restrictions:
+- Manages only assigned events; no global admin rights.
+- Cannot access the Users management page or modify any user account data.
+- Cannot assign roles to other users.
+- Cannot assign the Website Admin role.
+- Cannot modify unrelated events.
 
 ---
 
