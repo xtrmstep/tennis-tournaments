@@ -1809,3 +1809,29 @@ def test_draw_schema_contains_court_info(client, app):
         assert slot["time_slot"] >= 1
 
 
+def test_generate_draw_fallback_saves_pairs_to_db(client, app):
+    """Fallback auto-pairing in generate_draw saves CompetitionPair records so GET /pairs returns them."""
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=4)
+    _comp_transition(client, cid, "grouping")
+    # No manual pairs created; transition auto-pairs them
+    _comp_transition(client, cid, "draw")
+    # GET /pairs should already have pairs from the transition
+    r_pairs_before = client.get(f"/api/competitions/{cid}/pairs")
+    assert r_pairs_before.status_code == 200
+    assert len(r_pairs_before.get_json()) >= 2
+
+    # Generate draw
+    r = client.post(f"/api/competitions/{cid}/draw/generate", json={"num_courts": 1})
+    assert r.status_code == 200
+
+    # GET /pairs still returns all pairs after draw generation
+    r_pairs_after = client.get(f"/api/competitions/{cid}/pairs")
+    assert r_pairs_after.status_code == 200
+    pairs = r_pairs_after.get_json()
+    assert len(pairs) >= 2
+    # Each slot's unit_id should reference an actual pair id
+    pair_ids = {p["id"] for p in pairs}
+    for slot in r.get_json()["slots"]:
+        assert slot["unit_a_id"] in pair_ids
+        assert slot["unit_b_id"] in pair_ids
+

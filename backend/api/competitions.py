@@ -722,7 +722,6 @@ def generate_draw(competition_id: int):
             auto_teams = generate_teams(participants, PairingMode.RANDOM)
             for idx, t in enumerate(auto_teams):
                 tid = string.ascii_uppercase[idx % 26]
-                teams.append(Team(team_id=tid, player1=t.player1, player2=t.player2))
                 p1_id = int(t.player1.id)
                 p2_id = int(t.player2.id)
                 cp1 = next((cp for cp in confirmed if cp.id == p1_id), None)
@@ -730,7 +729,16 @@ def generate_draw(competition_id: int):
                 name1 = cp1.user.full_name or cp1.user.username or str(p1_id) if cp1 else str(p1_id)
                 name2 = cp2.user.full_name or cp2.user.username or str(p2_id) if cp2 else str(p2_id)
                 label = f"{name1} / {name2}"
-                unit_map[tid] = {"unit_id": None, "label": label}
+                new_pair = CompetitionPair(
+                    competition_id=comp.id,
+                    player_a_id=p1_id,
+                    player_b_id=p2_id,
+                    team_name=label,
+                )
+                db.session.add(new_pair)
+                db.session.flush()  # assign id before use
+                teams.append(Team(team_id=tid, player1=t.player1, player2=t.player2))
+                unit_map[tid] = {"unit_id": new_pair.id, "label": label}
 
     bracket_matches = generate_bracket(teams)
     assign_courts(bracket_matches, num_courts)

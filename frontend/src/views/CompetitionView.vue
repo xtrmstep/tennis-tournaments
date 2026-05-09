@@ -222,36 +222,6 @@
         </table>
       </div>
 
-      <!-- Create match form (admin/mod, draw state) -->
-      <div v-if="canManage && competition.status === 'draw'" style="background: #f5f5f5; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
-        <strong>Create Match</strong>
-        <div style="display: flex; gap: 0.5rem; align-items: flex-end; margin-top: 0.5rem; flex-wrap: wrap;">
-          <div>
-            <label style="display: block; font-size: 0.85rem;">Player A</label>
-            <select v-model="newMatch.playerA" style="padding: 0.4rem;">
-              <option value="">Select…</option>
-              <option v-for="p in confirmedPlayers" :key="p.id" :value="p.id">
-                {{ p.full_name || p.username || p.user_id }}
-              </option>
-            </select>
-          </div>
-          <div>
-            <label style="display: block; font-size: 0.85rem;">Player B</label>
-            <select v-model="newMatch.playerB" style="padding: 0.4rem;">
-              <option value="">Select…</option>
-              <option v-for="p in confirmedPlayers" :key="p.id" :value="p.id">
-                {{ p.full_name || p.username || p.user_id }}
-              </option>
-            </select>
-          </div>
-          <button
-            @click="addMatch"
-            style="padding: 0.4rem 1rem; background: #2c5f2e; color: white; border: none; cursor: pointer; border-radius: 4px;"
-          >Add Match</button>
-        </div>
-        <p v-if="matchError" style="color: red; margin-top: 0.4rem;">{{ matchError }}</p>
-      </div>
-
       <table v-if="matches.length" style="width: 100%; border-collapse: collapse;">
         <thead>
           <tr>
@@ -621,6 +591,10 @@ async function doGenerateDraw() {
   try {
     const res = await generateCompetitionDraw(id, numCourts.value)
     draw.value = res.data
+    if (competition.value.event_type === 'doubles') {
+      const pairsRes = await getCompetitionPairs(id)
+      pairs.value = pairsRes.data
+    }
   } catch (e) {
     drawError.value = e.response?.data?.error || 'Failed to generate draw.'
   }
