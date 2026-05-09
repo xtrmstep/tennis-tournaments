@@ -20,11 +20,13 @@ def create_app(config: dict | None = None) -> Flask:
     from .api.people import people_bp
     from .api.sorting import sorting_bp
     from .api.admin import admin_bp
+    from .api.users import users_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(people_bp, url_prefix="/api/people")
     app.register_blueprint(sorting_bp, url_prefix="/api/sorting")
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
+    app.register_blueprint(users_bp, url_prefix="/api/users")
 
     with app.app_context():
         # Ensure uploads directory exists

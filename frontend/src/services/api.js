@@ -19,6 +19,8 @@ export const updateProfile = (data) => api.put('/auth/profile', data)
 
 export const getPeople = () => api.get('/people/')
 
+export const getUsers = () => api.get('/users/')
+
 export const createPerson = (formData) =>
   api.post('/people/', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },

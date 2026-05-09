@@ -180,6 +180,56 @@ def test_list_people_unauthenticated(client):
 
 
 # ---------------------------------------------------------------------------
+# Users (public browse)
+# ---------------------------------------------------------------------------
+
+def test_list_users_unauthenticated(client):
+    r = client.get("/api/users/")
+    assert r.status_code == 401
+
+
+def test_list_users_authenticated_empty(client):
+    _auth_client(client)
+    r = client.get("/api/users/")
+    assert r.status_code == 200
+    # user without a complete profile is not included
+    assert r.get_json() == []
+
+
+def test_list_users_returns_completed_profiles_only(client):
+    _auth_client(client)
+    _complete_profile(client)
+    r = client.get("/api/users/")
+    assert r.status_code == 200
+    data = r.get_json()
+    assert len(data) == 1
+    assert data[0]["username"] == "alice"
+
+
+def test_list_users_public_fields_only(client):
+    _auth_client(client)
+    _complete_profile(client)
+    user = client.get("/api/users/").get_json()[0]
+    for field in ("id", "username", "full_name", "skill_level", "gender", "photo_url"):
+        assert field in user
+    for private in ("email", "is_admin", "is_active", "password_hash"):
+        assert private not in user
+
+
+def test_list_users_excludes_disabled(client, app):
+    _signup(client, email="disabled@example.com", password="password123")
+    _complete_profile(client, username="disabled_user")
+    client.post("/api/auth/logout")
+    _signup(client)
+    _make_admin(app)
+    users = client.get("/api/admin/users").get_json()
+    target = next(u for u in users if u["email"] == "disabled@example.com")
+    client.patch(f"/api/admin/users/{target['id']}", json={"is_active": False})
+    r = client.get("/api/users/")
+    assert all(u["username"] != "disabled_user" for u in r.get_json())
+
+
+# ---------------------------------------------------------------------------
 # People - authenticated
 # ---------------------------------------------------------------------------
 
