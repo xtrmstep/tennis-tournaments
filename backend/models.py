@@ -290,6 +290,7 @@ class CompetitionDraw(db.Model):
         return {
             "id": self.id,
             "competition_id": self.competition_id,
+            "event_type": self.competition.event_type if self.competition else None,
             "num_courts": self.num_courts,
             "slots": json.loads(self.bracket_json),
             "generated_at": self.generated_at.isoformat() if self.generated_at else None,

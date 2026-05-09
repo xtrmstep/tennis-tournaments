@@ -692,20 +692,45 @@ def generate_draw(competition_id: int):
             unit_map[tid] = {"unit_id": cp.id, "label": label}
     else:
         pairs = CompetitionPair.query.filter_by(competition_id=comp.id).all()
-        if len(pairs) < 2:
-            return jsonify({"error": "Need at least 2 pairs to generate a bracket."}), 409
         teams = []
         unit_map = {}
-        for idx, pair in enumerate(pairs):
-            tid = string.ascii_uppercase[idx % 26]
-            pa = pair.player_a
-            pb = pair.player_b
-            skill_a = (pa.user.skill_level or 0) * 10 if pa and pa.user else 0
-            skill_b = (pb.user.skill_level or 0) * 10 if pb and pb.user else 0
-            p1 = Participant(id=str(pa.id if pa else 0), name="", gender="", skill_percent=skill_a)
-            p2 = Participant(id=str(pb.id if pb else 0), name="", gender="", skill_percent=skill_b)
-            teams.append(Team(team_id=tid, player1=p1, player2=p2))
-            unit_map[tid] = {"unit_id": pair.id, "label": pair.team_name or tid}
+        if len(pairs) >= 2:
+            for idx, pair in enumerate(pairs):
+                tid = string.ascii_uppercase[idx % 26]
+                pa = pair.player_a
+                pb = pair.player_b
+                skill_a = (pa.user.skill_level or 0) * 10 if pa and pa.user else 0
+                skill_b = (pb.user.skill_level or 0) * 10 if pb and pb.user else 0
+                p1 = Participant(id=str(pa.id if pa else 0), name="", gender="", skill_percent=skill_a)
+                p2 = Participant(id=str(pb.id if pb else 0), name="", gender="", skill_percent=skill_b)
+                teams.append(Team(team_id=tid, player1=p1, player2=p2))
+                unit_map[tid] = {"unit_id": pair.id, "label": pair.team_name or tid}
+        else:
+            if len(confirmed) < 4:
+                return jsonify({"error": "Need at least 4 confirmed players to generate doubles pairs."}), 409
+            if len(confirmed) % 2 != 0:
+                return jsonify({"error": "Need an even number of confirmed players to auto-generate pairs."}), 409
+            participants = [
+                Participant(
+                    id=str(cp.id),
+                    name=cp.user.full_name or cp.user.username or "",
+                    gender="",
+                    skill_percent=(cp.user.skill_level or 0) * 10,
+                )
+                for cp in confirmed
+            ]
+            auto_teams = generate_teams(participants, PairingMode.RANDOM)
+            for idx, t in enumerate(auto_teams):
+                tid = string.ascii_uppercase[idx % 26]
+                teams.append(Team(team_id=tid, player1=t.player1, player2=t.player2))
+                p1_id = int(t.player1.id)
+                p2_id = int(t.player2.id)
+                cp1 = next((cp for cp in confirmed if cp.id == p1_id), None)
+                cp2 = next((cp for cp in confirmed if cp.id == p2_id), None)
+                name1 = cp1.user.full_name or cp1.user.username or str(p1_id) if cp1 else str(p1_id)
+                name2 = cp2.user.full_name or cp2.user.username or str(p2_id) if cp2 else str(p2_id)
+                label = f"{name1} / {name2}"
+                unit_map[tid] = {"unit_id": None, "label": label}
 
     bracket_matches = generate_bracket(teams)
     assign_courts(bracket_matches, num_courts)

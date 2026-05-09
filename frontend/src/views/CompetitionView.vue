@@ -81,6 +81,7 @@
             <th style="text-align: left; padding: 0.4rem; border-bottom: 1px solid #ccc;">Name</th>
             <th style="text-align: left; padding: 0.4rem; border-bottom: 1px solid #ccc;">Username</th>
             <th style="text-align: left; padding: 0.4rem; border-bottom: 1px solid #ccc;">Status</th>
+            <th v-if="competition.event_type === 'doubles' && ['grouping', 'draw', 'match', 'finished'].includes(competition.status)" style="text-align: left; padding: 0.4rem; border-bottom: 1px solid #ccc;">Partner</th>
             <th v-if="canManage" style="padding: 0.4rem; border-bottom: 1px solid #ccc;"></th>
           </tr>
         </thead>
@@ -90,6 +91,30 @@
             <td style="padding: 0.4rem;">{{ p.username || '—' }}</td>
             <td style="padding: 0.4rem;">
               <span :style="playerStatusStyle(p.status)">{{ p.status }}</span>
+            </td>
+            <td v-if="competition.event_type === 'doubles' && ['grouping', 'draw', 'match', 'finished'].includes(competition.status)" style="padding: 0.4rem;">
+              <span v-if="pairMap[p.id]" style="display: flex; gap: 0.3rem; align-items: center; flex-wrap: wrap;">
+                {{ partnerNameOf(p) }}
+                <button
+                  v-if="canManage && competition.status === 'grouping'"
+                  @click="removePairOfPlayer(p.id)"
+                  style="padding: 0.1rem 0.4rem; background: #a00; color: white; border: none; cursor: pointer; border-radius: 3px; font-size: 0.8rem;"
+                >✕</button>
+              </span>
+              <span v-else-if="canPairRow(p)" style="display: flex; gap: 0.3rem; align-items: center; flex-wrap: wrap;">
+                <select v-model="pendingPartner[p.id]" style="padding: 0.3rem; font-size: 0.85rem;">
+                  <option value="">Select partner…</option>
+                  <option v-for="u in unpairedPlayers.filter(u => u.id !== p.id)" :key="u.id" :value="u.id">
+                    {{ u.full_name || u.username || u.user_id }}
+                  </option>
+                </select>
+                <button
+                  @click="pairPlayers(p.id, pendingPartner[p.id])"
+                  :disabled="!pendingPartner[p.id]"
+                  style="padding: 0.2rem 0.6rem; background: #1a5fa0; color: white; border: none; cursor: pointer; border-radius: 3px; font-size: 0.85rem;"
+                >Pair</button>
+              </span>
+              <span v-else style="color: #aaa;">—</span>
             </td>
             <td v-if="canManage" style="padding: 0.4rem; white-space: nowrap;">
               <button
@@ -113,68 +138,11 @@
       <p v-else style="color: #888;">No participants yet.</p>
     </section>
 
-    <!-- Grouping section (doubles, grouping state) -->
+    <!-- Grouping section (doubles, grouping state and beyond) -->
     <section v-if="competition.event_type === 'doubles' && ['grouping', 'draw', 'match', 'finished'].includes(competition.status)" style="margin-bottom: 2rem;">
       <h3 style="margin-bottom: 0.5rem;">Pairs</h3>
-
-      <!-- Create pair form (mod/admin, grouping state) -->
-      <div v-if="canManage && competition.status === 'grouping'" style="background: #f5f5f5; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
-        <strong>Create Pair</strong>
-        <div style="display: flex; gap: 0.5rem; align-items: flex-end; margin-top: 0.5rem; flex-wrap: wrap;">
-          <div>
-            <label style="display: block; font-size: 0.85rem;">Team name (optional)</label>
-            <input v-model="newPair.teamName" maxlength="100" placeholder="e.g. Team Rocket" style="padding: 0.4rem; width: 12rem;" />
-          </div>
-          <div>
-            <label style="display: block; font-size: 0.85rem;">Player A</label>
-            <select v-model="newPair.playerA" style="padding: 0.4rem;">
-              <option value="">Select…</option>
-              <option v-for="p in unpairedPlayers" :key="p.id" :value="p.id">
-                {{ p.full_name || p.username || p.user_id }}
-              </option>
-            </select>
-          </div>
-          <div>
-            <label style="display: block; font-size: 0.85rem;">Player B</label>
-            <select v-model="newPair.playerB" style="padding: 0.4rem;">
-              <option value="">Select…</option>
-              <option v-for="p in unpairedPlayers" :key="p.id" :value="p.id">
-                {{ p.full_name || p.username || p.user_id }}
-              </option>
-            </select>
-          </div>
-          <button
-            @click="addPair"
-            style="padding: 0.4rem 1rem; background: #2c5f2e; color: white; border: none; cursor: pointer; border-radius: 4px;"
-          >Add Pair</button>
-        </div>
-        <p v-if="pairError" style="color: red; margin-top: 0.4rem;">{{ pairError }}</p>
-      </div>
-
-      <!-- Propose pair form (confirmed participant who is not yet paired) -->
-      <div v-if="isMyselfUnpaired && !canManage && competition.status === 'grouping'" style="background: #eef5fb; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
-        <strong>Propose a partner</strong>
-        <div style="display: flex; gap: 0.5rem; align-items: flex-end; margin-top: 0.5rem; flex-wrap: wrap;">
-          <div>
-            <label style="display: block; font-size: 0.85rem;">Team name (optional)</label>
-            <input v-model="newPair.teamName" maxlength="100" placeholder="e.g. Team Rocket" style="padding: 0.4rem; width: 12rem;" />
-          </div>
-          <div>
-            <label style="display: block; font-size: 0.85rem;">Partner</label>
-            <select v-model="newPair.playerB" style="padding: 0.4rem;">
-              <option value="">Select…</option>
-              <option v-for="p in partnerCandidates" :key="p.id" :value="p.id">
-                {{ p.full_name || p.username || p.user_id }}
-              </option>
-            </select>
-          </div>
-          <button
-            @click="addPair"
-            style="padding: 0.4rem 1rem; background: #1a5fa0; color: white; border: none; cursor: pointer; border-radius: 4px;"
-          >Propose Pair</button>
-        </div>
-        <p v-if="pairError" style="color: red; margin-top: 0.4rem;">{{ pairError }}</p>
-      </div> style="width: 100%; border-collapse: collapse;">
+      <p v-if="pairError" style="color: red; margin-top: 0.4rem;">{{ pairError }}</p>
+      <table v-if="pairs.length" style="width: 100%; border-collapse: collapse;">
         <thead>
           <tr>
             <th style="text-align: left; padding: 0.4rem; border-bottom: 1px solid #ccc;">#</th>
@@ -338,7 +306,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, reactive, onMounted } from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
 import {
   getMe,
@@ -400,6 +368,14 @@ const isMyselfUnpaired = computed(() =>
 const partnerCandidates = computed(() =>
   unpairedPlayers.value.filter(p => p.id !== myPlayerEntry.value?.id)
 )
+const pairMap = computed(() => {
+  const map = {}
+  pairs.value.forEach(pair => {
+    map[pair.player_a_id] = pair
+    map[pair.player_b_id] = pair
+  })
+  return map
+})
 
 // Score inputs keyed by match id
 const scoreInputs = ref({})
@@ -419,8 +395,8 @@ const applyError = ref('')
 const newMatch = ref({ playerA: '', playerB: '' })
 const matchError = ref('')
 
-// New pair
-const newPair = ref({ playerA: '', playerB: '', teamName: '' })
+// Inline partner selection (keyed by competition_player id)
+const pendingPartner = reactive({})
 const pairError = ref('')
 
 // Draw generation
@@ -588,21 +564,45 @@ async function deletePlayer(playerId) {
   }
 }
 
-async function addPair() {
+function partnerNameOf(player) {
+  const pair = pairMap.value[player.id]
+  if (!pair) return ''
+  const partnerId = pair.player_a_id === player.id ? pair.player_b_id : pair.player_a_id
+  const partner = players.value.find(p => p.id === partnerId)
+  return partner ? (partner.full_name || partner.username || `#${partnerId}`) : `#${partnerId}`
+}
+
+function canPairRow(player) {
+  if (competition.value.status !== 'grouping') return false
+  if (player.status !== 'player') return false
+  if (pairedPlayerIds.value.has(player.id)) return false
+  if (canManage.value) return true
+  return myPlayerEntry.value?.id === player.id
+}
+
+async function pairPlayers(playerAId, partnerBId) {
+  if (!partnerBId) return
   pairError.value = ''
-  const playerA = canManage.value ? newPair.value.playerA : (myPlayerEntry.value?.id ?? '')
-  const playerB = newPair.value.playerB
-  if (!playerA || !playerB) {
-    pairError.value = 'Select both players.'
-    return
-  }
   try {
-    await createPair(id, playerA, playerB, newPair.value.teamName || undefined)
-    newPair.value = { playerA: '', playerB: '', teamName: '' }
+    await createPair(id, playerAId, partnerBId)
+    pendingPartner[playerAId] = ''
     const res = await getCompetitionPairs(id)
     pairs.value = res.data
   } catch (e) {
     pairError.value = e.response?.data?.error || 'Failed to create pair.'
+  }
+}
+
+async function removePairOfPlayer(playerId) {
+  const pair = pairMap.value[playerId]
+  if (!pair) return
+  pairError.value = ''
+  try {
+    await deletePair(id, pair.id)
+    const res = await getCompetitionPairs(id)
+    pairs.value = res.data
+  } catch (e) {
+    pairError.value = e.response?.data?.error || 'Failed to remove pair.'
   }
 }
 

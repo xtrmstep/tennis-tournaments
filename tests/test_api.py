@@ -1701,3 +1701,111 @@ def test_generate_draw_upserts_on_regenerate(client, app):
     assert r2.status_code == 200
     assert r2.get_json()["num_courts"] == 3
 
+
+# ---------------------------------------------------------------------------
+# Task 8: competition schema (event_type, structure, data completeness)
+# ---------------------------------------------------------------------------
+
+def test_draw_schema_includes_event_type_singles(client, app):
+    """Draw schema for a singles competition has event_type='singles'."""
+    cid, _ = _comp_setup_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "draw")
+    client.post(f"/api/competitions/{cid}/draw/generate", json={"num_courts": 1})
+    r = client.get(f"/api/competitions/{cid}/draw")
+    assert r.status_code == 200
+    assert r.get_json()["event_type"] == "singles"
+
+
+def test_draw_schema_includes_event_type_doubles(client, app):
+    """Draw schema for a doubles competition has event_type='doubles'."""
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=4)
+    _comp_transition(client, cid, "grouping")
+    client.post(f"/api/competitions/{cid}/pairs",
+                json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]})
+    client.post(f"/api/competitions/{cid}/pairs",
+                json={"player_a_id": player_ids[2], "player_b_id": player_ids[3]})
+    _comp_transition(client, cid, "draw")
+    client.post(f"/api/competitions/{cid}/draw/generate", json={"num_courts": 1})
+    r = client.get(f"/api/competitions/{cid}/draw")
+    assert r.status_code == 200
+    assert r.get_json()["event_type"] == "doubles"
+
+
+def test_draw_schema_singles_slots_reference_individual_players(client, app):
+    """Singles draw slots carry unit_a_id and unit_b_id pointing to competition player ids."""
+    cid, player_ids = _comp_setup_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "draw")
+    r = client.post(f"/api/competitions/{cid}/draw/generate", json={"num_courts": 1})
+    slots = r.get_json()["slots"]
+    assert len(slots) == 1
+    slot = slots[0]
+    assert slot["unit_a_id"] in player_ids
+    assert slot["unit_b_id"] in player_ids
+    assert slot["unit_a_id"] != slot["unit_b_id"]
+
+
+def test_draw_schema_doubles_slots_reference_pair_ids(client, app):
+    """Doubles draw slots carry unit_a_id and unit_b_id pointing to competition pair ids."""
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=4)
+    _comp_transition(client, cid, "grouping")
+    rp1 = client.post(f"/api/competitions/{cid}/pairs",
+                      json={"player_a_id": player_ids[0], "player_b_id": player_ids[1],
+                            "team_name": "Red"})
+    rp2 = client.post(f"/api/competitions/{cid}/pairs",
+                      json={"player_a_id": player_ids[2], "player_b_id": player_ids[3],
+                            "team_name": "Blue"})
+    pair_ids = {rp1.get_json()["id"], rp2.get_json()["id"]}
+    _comp_transition(client, cid, "draw")
+    r = client.post(f"/api/competitions/{cid}/draw/generate", json={"num_courts": 1})
+    slots = r.get_json()["slots"]
+    assert len(slots) == 1
+    slot = slots[0]
+    assert slot["unit_a_id"] in pair_ids
+    assert slot["unit_b_id"] in pair_ids
+
+
+def test_draw_schema_doubles_preserves_manually_defined_pairs(client, app):
+    """Manually defined pairs appear as distinct units in the doubles draw schema."""
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=4)
+    _comp_transition(client, cid, "grouping")
+    client.post(f"/api/competitions/{cid}/pairs",
+                json={"player_a_id": player_ids[0], "player_b_id": player_ids[1],
+                      "team_name": "Champions"})
+    client.post(f"/api/competitions/{cid}/pairs",
+                json={"player_a_id": player_ids[2], "player_b_id": player_ids[3],
+                      "team_name": "Challengers"})
+    _comp_transition(client, cid, "draw")
+    r = client.post(f"/api/competitions/{cid}/draw/generate", json={"num_courts": 1})
+    assert r.status_code == 200
+    slots = r.get_json()["slots"]
+    labels = {slots[0]["label_a"], slots[0]["label_b"]}
+    assert "Champions" in labels
+    assert "Challengers" in labels
+
+
+def test_draw_requires_grouping_completed_for_doubles(client, app):
+    """Doubles draw generation fails when fewer than 2 pairs exist."""
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=4)
+    _comp_transition(client, cid, "grouping")
+    # Only one pair — the other two players auto-pair on transition to draw
+    client.post(f"/api/competitions/{cid}/pairs",
+                json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]})
+    _comp_transition(client, cid, "draw")
+    # Now there are 2 pairs (auto-paired on transition), generation should succeed
+    r = client.post(f"/api/competitions/{cid}/draw/generate", json={"num_courts": 1})
+    assert r.status_code == 200
+    assert len(r.get_json()["slots"]) == 1
+
+
+def test_draw_schema_contains_court_info(client, app):
+    """Every bracket slot in the schema has court and time_slot fields."""
+    cid, _ = _comp_setup_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "draw")
+    r = client.post(f"/api/competitions/{cid}/draw/generate", json={"num_courts": 1})
+    for slot in r.get_json()["slots"]:
+        assert "court" in slot
+        assert "time_slot" in slot
+        assert slot["court"] >= 1
+        assert slot["time_slot"] >= 1
+
+
