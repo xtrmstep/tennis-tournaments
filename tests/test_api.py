@@ -835,3 +835,408 @@ def test_admin_update_user_profile_not_found(client, app):
         },
     )
     assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Competitions — helpers
+# ---------------------------------------------------------------------------
+
+def _comp_promote_moderator(app, email="test@example.com"):
+    from backend.models import User
+    from backend.extensions import db
+    with app.app_context():
+        u = User.query.filter_by(email=email).first()
+        u.is_moderator = True
+        db.session.commit()
+
+
+def _comp_create(client, name="Test Cup", event_type="singles"):
+    return client.post("/api/competitions/", json={"name": name, "event_type": event_type})
+
+
+def _comp_transition(client, cid, status):
+    return client.post(f"/api/competitions/{cid}/transition", json={"status": status})
+
+
+def _comp_setup_with_players(client, app, num_players=2):
+    """Create and publish a competition, apply + confirm `num_players` users.
+
+    Returns (competition_id, [competition_player_ids]).
+    All state is set up with admin@x.com as the admin; players are
+    player0@x.com … playerN@x.com (password 'password123' for all).
+    Client session ends as admin@x.com on return.
+    """
+    _signup(client, "admin@x.com", "password123")
+    _make_admin(app, "admin@x.com")
+    # _signup sets the session; _make_admin only touches DB — no re-login needed
+    cid = _comp_create(client).get_json()["id"]
+    _comp_transition(client, cid, "published")
+
+    player_ids = []
+    for i in range(num_players):
+        client.post("/api/auth/logout")
+        _signup(client, f"player{i}@x.com", "password123")
+        pid = client.post(f"/api/competitions/{cid}/apply").get_json()["id"]
+        player_ids.append(pid)
+
+    # Switch back to admin to confirm players
+    client.post("/api/auth/logout")
+    _login(client, "admin@x.com", "password123")
+    for pid in player_ids:
+        client.patch(f"/api/competitions/{cid}/players/{pid}", json={"status": "player"})
+
+    return cid, player_ids
+
+
+def _comp_setup_in_match_state(client, app):
+    """Build a competition all the way to 'match' state with 2 players and 1 match.
+
+    Returns (competition_id, match_id).
+    Client session is admin@x.com on return.
+    """
+    cid, player_ids = _comp_setup_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "draw")
+    mr = client.post(
+        f"/api/competitions/{cid}/matches",
+        json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]},
+    )
+    match_id = mr.get_json()["id"]
+    _comp_transition(client, cid, "match")
+    return cid, match_id
+
+
+# ---------------------------------------------------------------------------
+# Competitions — tests
+# ---------------------------------------------------------------------------
+
+def test_competition_create_as_admin(client, app):
+    _signup(client)
+    _make_admin(app)
+    r = _comp_create(client)
+    assert r.status_code == 201
+    data = r.get_json()
+    assert data["name"] == "Test Cup"
+    assert data["status"] == "draft"
+    assert data["event_type"] == "singles"
+
+
+def test_competition_create_as_moderator(client, app):
+    _signup(client)
+    _comp_promote_moderator(app)
+    r = _comp_create(client)
+    assert r.status_code == 201
+
+
+def test_competition_create_as_regular_user_fails(client):
+    _signup(client)
+    r = _comp_create(client)
+    assert r.status_code == 403
+
+
+def test_competition_create_missing_name_fails(client, app):
+    _signup(client)
+    _make_admin(app)
+    r = client.post("/api/competitions/", json={"event_type": "singles"})
+    assert r.status_code == 400
+
+
+def test_competition_list_draft_hidden_from_regular_user(client, app):
+    _signup(client)
+    _make_admin(app)
+    _comp_create(client)
+    client.post("/api/auth/logout")
+    _signup(client, "user2@example.com")
+    r = client.get("/api/competitions/")
+    assert r.status_code == 200
+    assert r.get_json() == []
+
+
+def test_competition_list_draft_visible_to_admin(client, app):
+    _signup(client)
+    _make_admin(app)
+    _comp_create(client)
+    r = client.get("/api/competitions/")
+    assert r.status_code == 200
+    assert len(r.get_json()) == 1
+
+
+def test_competition_list_includes_counts(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client).get_json()["id"]
+    _comp_transition(client, cid, "published")
+    client.post(f"/api/competitions/{cid}/apply")
+    r = client.get("/api/competitions/")
+    comp = r.get_json()[0]
+    assert "player_count" in comp
+    assert "candidate_count" in comp
+    assert comp["candidate_count"] == 1
+
+
+def test_competition_get_draft_as_regular_user_returns_404(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client).get_json()["id"]
+    client.post("/api/auth/logout")
+    _signup(client, "user2@example.com")
+    r = client.get(f"/api/competitions/{cid}")
+    assert r.status_code == 404
+
+
+def test_competition_transition_to_published(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client).get_json()["id"]
+    r = _comp_transition(client, cid, "published")
+    assert r.status_code == 200
+    assert r.get_json()["status"] == "published"
+
+
+def test_competition_transition_invalid_state_fails(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client).get_json()["id"]
+    r = _comp_transition(client, cid, "finished")
+    assert r.status_code == 409
+
+
+def test_competition_transition_as_regular_user_fails(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client).get_json()["id"]
+    client.post("/api/auth/logout")
+    _signup(client, "user2@example.com")
+    r = _comp_transition(client, cid, "published")
+    assert r.status_code == 403
+
+
+def test_competition_apply_when_published(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client).get_json()["id"]
+    _comp_transition(client, cid, "published")
+    r = client.post(f"/api/competitions/{cid}/apply")
+    assert r.status_code == 201
+    assert r.get_json()["status"] == "candidate"
+
+
+def test_competition_apply_when_not_published_fails(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client).get_json()["id"]
+    r = client.post(f"/api/competitions/{cid}/apply")
+    assert r.status_code == 409
+
+
+def test_competition_apply_twice_fails(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client).get_json()["id"]
+    _comp_transition(client, cid, "published")
+    client.post(f"/api/competitions/{cid}/apply")
+    r = client.post(f"/api/competitions/{cid}/apply")
+    assert r.status_code == 409
+
+
+def test_competition_withdraw_candidate(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client).get_json()["id"]
+    _comp_transition(client, cid, "published")
+    client.post(f"/api/competitions/{cid}/apply")
+    r = client.delete(f"/api/competitions/{cid}/apply")
+    assert r.status_code == 204
+    players = client.get(f"/api/competitions/{cid}/players").get_json()
+    assert len(players) == 0
+
+
+def test_competition_withdraw_not_applied_fails(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client).get_json()["id"]
+    _comp_transition(client, cid, "published")
+    r = client.delete(f"/api/competitions/{cid}/apply")
+    assert r.status_code == 404
+
+
+def test_competition_confirm_player_as_admin(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client).get_json()["id"]
+    _comp_transition(client, cid, "published")
+    pid = client.post(f"/api/competitions/{cid}/apply").get_json()["id"]
+    r = client.patch(f"/api/competitions/{cid}/players/{pid}", json={"status": "player"})
+    assert r.status_code == 200
+    assert r.get_json()["status"] == "player"
+
+
+def test_competition_confirm_player_as_regular_user_fails(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client).get_json()["id"]
+    _comp_transition(client, cid, "published")
+    pid = client.post(f"/api/competitions/{cid}/apply").get_json()["id"]
+    client.post("/api/auth/logout")
+    _signup(client, "user2@example.com")
+    r = client.patch(f"/api/competitions/{cid}/players/{pid}", json={"status": "player"})
+    assert r.status_code == 403
+
+
+def test_competition_transition_draw_requires_two_confirmed_players(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client).get_json()["id"]
+    _comp_transition(client, cid, "published")
+    # Apply + confirm only 1 player
+    pid = client.post(f"/api/competitions/{cid}/apply").get_json()["id"]
+    client.patch(f"/api/competitions/{cid}/players/{pid}", json={"status": "player"})
+    r = _comp_transition(client, cid, "draw")
+    assert r.status_code == 409
+    assert "2" in r.get_json()["error"]
+
+
+def test_competition_transition_draw_with_zero_players_fails(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client).get_json()["id"]
+    _comp_transition(client, cid, "published")
+    r = _comp_transition(client, cid, "draw")
+    assert r.status_code == 409
+
+
+def test_competition_create_match_as_admin(client, app):
+    cid, player_ids = _comp_setup_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "draw")
+    r = client.post(
+        f"/api/competitions/{cid}/matches",
+        json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]},
+    )
+    assert r.status_code == 201
+    data = r.get_json()
+    assert data["player_a_id"] == player_ids[0]
+    assert data["score_a"] is None
+
+
+def test_competition_create_match_same_player_fails(client, app):
+    cid, player_ids = _comp_setup_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "draw")
+    r = client.post(
+        f"/api/competitions/{cid}/matches",
+        json={"player_a_id": player_ids[0], "player_b_id": player_ids[0]},
+    )
+    assert r.status_code == 400
+
+
+def test_competition_create_match_outside_draw_fails(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client).get_json()["id"]
+    r = client.post(
+        f"/api/competitions/{cid}/matches",
+        json={"player_a_id": 1, "player_b_id": 2},
+    )
+    assert r.status_code == 409
+
+
+def test_competition_transition_match_requires_at_least_one_match(client, app):
+    cid, _ = _comp_setup_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "draw")
+    r = _comp_transition(client, cid, "match")
+    assert r.status_code == 409
+
+
+def test_competition_score_by_player(client, app):
+    cid, match_id = _comp_setup_in_match_state(client, app)
+    client.post("/api/auth/logout")
+    _login(client, "player0@x.com", "password123")
+    r = client.patch(
+        f"/api/competitions/{cid}/matches/{match_id}/score",
+        json={"score_a": 6, "score_b": 3},
+    )
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["score_a"] == 6
+    assert data["score_b"] == 3
+
+
+def test_competition_score_by_non_player_fails(client, app):
+    cid, match_id = _comp_setup_in_match_state(client, app)
+    client.post("/api/auth/logout")
+    _signup(client, "outsider@x.com", "password123")
+    r = client.patch(
+        f"/api/competitions/{cid}/matches/{match_id}/score",
+        json={"score_a": 6, "score_b": 3},
+    )
+    assert r.status_code == 403
+
+
+def test_competition_score_by_moderator(client, app):
+    cid, match_id = _comp_setup_in_match_state(client, app)
+    # client is already admin@x.com (the admin)
+    r = client.patch(
+        f"/api/competitions/{cid}/matches/{match_id}/score",
+        json={"score_a": 6, "score_b": 3},
+    )
+    assert r.status_code == 200
+
+
+def test_competition_score_outside_match_phase_fails(client, app):
+    cid, player_ids = _comp_setup_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "draw")
+    mr = client.post(
+        f"/api/competitions/{cid}/matches",
+        json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]},
+    )
+    match_id = mr.get_json()["id"]
+    # Still in draw state
+    r = client.patch(
+        f"/api/competitions/{cid}/matches/{match_id}/score",
+        json={"score_a": 6, "score_b": 3},
+    )
+    assert r.status_code == 409
+
+
+def test_competition_transition_finished_requires_all_scored(client, app):
+    cid, match_id = _comp_setup_in_match_state(client, app)
+    r = _comp_transition(client, cid, "finished")
+    assert r.status_code == 409
+    assert "score" in r.get_json()["error"].lower()
+
+
+def test_competition_transition_finished_after_all_scored(client, app):
+    cid, match_id = _comp_setup_in_match_state(client, app)
+    client.patch(
+        f"/api/competitions/{cid}/matches/{match_id}/score",
+        json={"score_a": 6, "score_b": 3},
+    )
+    r = _comp_transition(client, cid, "finished")
+    assert r.status_code == 200
+    assert r.get_json()["status"] == "finished"
+
+
+def test_competition_audit_events_recorded(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client).get_json()["id"]
+    _comp_transition(client, cid, "published")
+    from backend.models import AuditCompetitionEvent
+    with app.app_context():
+        events = AuditCompetitionEvent.query.filter_by(competition_id=cid).all()
+        actions = [e.action for e in events]
+    assert "competition_created" in actions
+    assert "state_transitioned" in actions
+
+
+def test_competition_player_confirm_audit_recorded(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client).get_json()["id"]
+    _comp_transition(client, cid, "published")
+    pid = client.post(f"/api/competitions/{cid}/apply").get_json()["id"]
+    client.patch(f"/api/competitions/{cid}/players/{pid}", json={"status": "player"})
+    from backend.models import AuditCompetitionEvent
+    with app.app_context():
+        events = AuditCompetitionEvent.query.filter_by(
+            competition_id=cid, action="player_status_changed"
+        ).all()
+    assert len(events) == 1

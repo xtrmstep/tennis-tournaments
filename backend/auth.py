@@ -86,6 +86,19 @@ def admin_required(f):
     return decorated
 
 
+def moderator_or_admin_required(f):
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        if "user_id" not in session:
+            return jsonify({"error": "Authentication required"}), 401
+        user = db.session.get(User, session["user_id"])
+        if not user or (not user.is_admin and not user.is_moderator):
+            return jsonify({"error": "Moderator or admin access required"}), 403
+        return f(*args, **kwargs)
+
+    return decorated
+
+
 @auth_bp.post("/signup")
 def signup():
     data = request.get_json(silent=True) or {}

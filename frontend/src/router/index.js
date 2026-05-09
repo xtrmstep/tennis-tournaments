@@ -10,6 +10,9 @@ const routes = [
   { path: '/people/new', component: () => import('../views/PersonFormView.vue') },
   { path: '/sorting', component: () => import('../views/SortingView.vue') },
   { path: '/admin/users', component: () => import('../views/AdminUsersView.vue'), meta: { adminOnly: true } },
+  { path: '/competitions', component: () => import('../views/CompetitionsView.vue') },
+  { path: '/competitions/new', component: () => import('../views/CompetitionFormView.vue'), meta: { moderatorOrAdmin: true } },
+  { path: '/competitions/:id', component: () => import('../views/CompetitionView.vue') },
 ]
 
 const router = createRouter({
@@ -30,6 +33,9 @@ router.beforeEach(async (to) => {
     const res = await getMe()
     if (to.meta.adminOnly && !res.data.is_admin) {
       return '/people'
+    }
+    if (to.meta.moderatorOrAdmin && !res.data.is_admin && !res.data.is_moderator) {
+      return '/competitions'
     }
     if (!res.data.profile_complete && !to.meta.skipProfileCheck) {
       return '/profile'

@@ -3,6 +3,7 @@
     <nav v-if="isAuthenticated" style="padding: 1rem; background: #2c5f2e; color: white; display: flex; gap: 1rem; align-items: center;">
       <strong>🎾 Tennis Tournaments</strong>
       <RouterLink to="/people" style="color: white;">People</RouterLink>
+      <RouterLink to="/competitions" style="color: white;">Competitions</RouterLink>
       <RouterLink to="/sorting" style="color: white;">Sorting</RouterLink>
       <RouterLink to="/profile" style="color: white;">Profile</RouterLink>
       <RouterLink v-if="isAdmin" to="/admin/users" style="color: white;">Users</RouterLink>

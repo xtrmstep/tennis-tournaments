@@ -105,3 +105,129 @@ class AuditAuthEvent(db.Model):
     __table_args__ = (
         db.Index("ix_audit_auth_events_email_at", "email", "attempted_at"),
     )
+
+
+class Competition(db.Model):
+    __tablename__ = "competitions"
+    id: int = db.Column(db.Integer, primary_key=True)
+    name: str = db.Column(db.String(200), nullable=False)
+    description: str | None = db.Column(db.Text, nullable=True)
+    event_type: str = db.Column(db.String(20), nullable=False, default="singles")  # 'singles' or 'doubles'
+    status: str = db.Column(db.String(20), nullable=False, default="draft")  # draft/published/draw/match/finished
+    created_at: datetime = db.Column(
+        db.DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: datetime | None = db.Column(db.DateTime, nullable=True)
+
+    players = db.relationship(
+        "CompetitionPlayer", back_populates="competition", cascade="all, delete-orphan"
+    )
+    matches = db.relationship(
+        "CompetitionMatch", back_populates="competition", cascade="all, delete-orphan"
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "event_type": self.event_type,
+            "status": self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class CompetitionPlayer(db.Model):
+    __tablename__ = "competition_players"
+    id: int = db.Column(db.Integer, primary_key=True)
+    competition_id: int = db.Column(
+        db.Integer, db.ForeignKey("competitions.id"), nullable=False
+    )
+    user_id: int = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    status: str = db.Column(db.String(20), nullable=False, default="candidate")  # 'candidate' or 'player'
+    joined_at: datetime = db.Column(
+        db.DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+    competition = db.relationship("Competition", back_populates="players")
+    user = db.relationship("User")
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "competition_id", "user_id", name="uq_competition_players_comp_user"
+        ),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "competition_id": self.competition_id,
+            "user_id": self.user_id,
+            "status": self.status,
+            "joined_at": self.joined_at.isoformat() if self.joined_at else None,
+            "username": self.user.username if self.user else None,
+            "full_name": self.user.full_name if self.user else None,
+        }
+
+
+class CompetitionMatch(db.Model):
+    __tablename__ = "competition_matches"
+    id: int = db.Column(db.Integer, primary_key=True)
+    competition_id: int = db.Column(
+        db.Integer, db.ForeignKey("competitions.id"), nullable=False
+    )
+    player_a_id: int = db.Column(
+        db.Integer, db.ForeignKey("competition_players.id"), nullable=False
+    )
+    player_b_id: int = db.Column(
+        db.Integer, db.ForeignKey("competition_players.id"), nullable=False
+    )
+    score_a: int | None = db.Column(db.Integer, nullable=True)
+    score_b: int | None = db.Column(db.Integer, nullable=True)
+    created_at: datetime = db.Column(
+        db.DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+    competition = db.relationship("Competition", back_populates="matches")
+    player_a = db.relationship("CompetitionPlayer", foreign_keys=[player_a_id])
+    player_b = db.relationship("CompetitionPlayer", foreign_keys=[player_b_id])
+
+    def to_dict(self) -> dict:
+        pa = self.player_a
+        pb = self.player_b
+        return {
+            "id": self.id,
+            "competition_id": self.competition_id,
+            "player_a_id": self.player_a_id,
+            "player_b_id": self.player_b_id,
+            "player_a_user_id": pa.user_id if pa else None,
+            "player_b_user_id": pb.user_id if pb else None,
+            "player_a_name": (
+                (pa.user.full_name or pa.user.username) if pa and pa.user else f"Player {self.player_a_id}"
+            ),
+            "player_b_name": (
+                (pb.user.full_name or pb.user.username) if pb and pb.user else f"Player {self.player_b_id}"
+            ),
+            "score_a": self.score_a,
+            "score_b": self.score_b,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class AuditCompetitionEvent(db.Model):
+    __tablename__ = "audit_competition_events"
+    id: int = db.Column(db.Integer, primary_key=True)
+    competition_id: int = db.Column(
+        db.Integer, db.ForeignKey("competitions.id"), nullable=False
+    )
+    user_id: int = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    action: str = db.Column(db.String(50), nullable=False)
+    detail: str | None = db.Column(db.Text, nullable=True)
+    created_at: datetime = db.Column(
+        db.DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        db.Index("ix_audit_competition_events_comp", "competition_id"),
+    )
