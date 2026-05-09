@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.sorting_service import run_sorting
+from backend.services.sorting_service import run_sorting
 
 
 class FakePerson:
-    """Minimal stand-in for app.models.Person (no DB needed)."""
+    """Minimal stand-in for backend.models.Person (no DB needed)."""
 
     def __init__(self, id: int, name: str, rating: int | None = None, skill: str | None = None):
         self.id = id

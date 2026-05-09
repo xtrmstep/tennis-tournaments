@@ -17,18 +17,18 @@ This repository contains a Python 3.12 CLI and a Flask + Vue 3 web application f
 - `requirements.txt` — Flask backend runtime dependencies.
 - `pyproject.toml` — project metadata and pytest configuration.
 
-### Flask backend (`app/`)
+### Flask backend (`backend/`)
 
-- `app/__init__.py` — app factory: registers blueprints, initialises DB, creates uploads directory.
-- `app/config.py` — configuration class; reads `SECRET_KEY` and `DATABASE_URL` from environment.
-- `app/extensions.py` — SQLAlchemy singleton (`db`).
-- `app/models.py` — SQLAlchemy models: `User`, `Person`, `SortResult`. Separate from root `models.py`.
-- `app/auth.py` — `/api/auth` blueprint (signup, login, logout, me) and `login_required` decorator.
-- `app/api/__init__.py` — empty package marker.
-- `app/api/people.py` — `/api/people` blueprint: list, create (with photo upload), get, update rating, serve photo.
-- `app/api/sorting.py` — `/api/sorting` blueprint: run sorting, retrieve latest result.
-- `app/services/__init__.py` — empty package marker.
-- `app/services/sorting_service.py` — bridges DB `Person` objects to root `pairing.generate_teams()` for doubles; rating-descending sort for singles.
+- `backend/__init__.py` — app factory: registers blueprints, initialises DB, creates uploads directory.
+- `backend/config.py` — configuration class; reads `SECRET_KEY` and `DATABASE_URL` from environment.
+- `backend/extensions.py` — SQLAlchemy singleton (`db`).
+- `backend/models.py` — SQLAlchemy models: `User`, `Person`, `SortResult`. Separate from root `models.py`.
+- `backend/auth.py` — `/api/auth` blueprint (signup, login, logout, me) and `login_required` decorator.
+- `backend/api/__init__.py` — empty package marker.
+- `backend/api/people.py` — `/api/people` blueprint: list, create (with photo upload), get, update rating, serve photo.
+- `backend/api/sorting.py` — `/api/sorting` blueprint: run sorting, retrieve latest result.
+- `backend/services/__init__.py` — empty package marker.
+- `backend/services/sorting_service.py` — bridges DB `Person` objects to root `pairing.generate_teams()` for doubles; rating-descending sort for singles.
 
 ### Vue 3 frontend (`frontend/`)
 
@@ -70,7 +70,7 @@ This repository contains a Python 3.12 CLI and a Flask + Vue 3 web application f
 - Avoid duplication, hidden coupling, and large unrelated refactoring.
 - Check the existing implementation and test patterns before adding new APIs, names, or file layouts.
 - Do not add new runtime dependencies, frameworks, or architectural layers without a clear repository-supported reason.
-- Do not mix root `models.py` (CLI dataclasses) with `app/models.py` (SQLAlchemy DB models).
+- Do not mix root `models.py` (CLI dataclasses) with `backend/models.py` (SQLAlchemy DB models).
 
 ## Dependent-Object Update Rules
 
@@ -80,8 +80,8 @@ This repository contains a Python 3.12 CLI and a Flask + Vue 3 web application f
 - When changing group-stage behavior in `grouping.py`, also check bracket qualification/seeding in `bracket.py`, scheduling assumptions in `scheduling.py`, and the related tests.
 - When changing knockout behavior in `bracket.py`, also verify inputs from grouping, scheduling expectations, and output formatting/tests.
 - When changing scheduling behavior in `scheduling.py`, also review match output expectations and tests for court assignment, time slots, and dependency ordering.
-- When changing Flask models in `app/models.py`, update related API routes, service layer, and API tests together.
-- When changing API routes or request/response shapes in `app/api/`, update `frontend/src/services/api.js`, affected Vue views, and `tests/test_api.py` together.
+- When changing Flask models in `backend/models.py`, update related API routes, service layer, and API tests together.
+- When changing API routes or request/response shapes in `backend/api/`, update `frontend/src/services/api.js`, affected Vue views, and `tests/test_api.py` together.
 - When adding a new major workflow or object, place it with the existing module that owns that responsibility and add/update focused tests and documentation where user-visible behavior changes.
 - When removing or renaming CLI options, CSV fields, output columns, or output files, update dependent tests and documentation in the same change.
 - When changing environment variables or Docker configuration, update `README.md` and `docker-compose.yml` together.
