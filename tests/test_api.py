@@ -100,6 +100,103 @@ def test_logout(client):
     assert r.status_code == 200
 
 
+# ---------------------------------------------------------------------------
+# Login rate limiting
+# ---------------------------------------------------------------------------
+
+def test_login_failure_recorded_in_audit(client, app):
+    _signup(client)
+    client.post("/api/auth/login", json={"email": "test@example.com", "password": "wrongpassword"})
+    from backend.models import AuditAuthEvent
+    with app.app_context():
+        events = AuditAuthEvent.query.filter_by(email="test@example.com", event_type="login").all()
+        assert len(events) == 1
+        assert events[0].success is False
+
+
+def test_login_success_recorded_in_audit(client, app):
+    _signup(client)
+    _login(client)
+    from backend.models import AuditAuthEvent
+    with app.app_context():
+        events = AuditAuthEvent.query.filter_by(
+            email="test@example.com", event_type="login", success=True
+        ).all()
+        assert len(events) == 1
+
+
+def test_logout_recorded_in_audit(client, app):
+    _signup(client)
+    _login(client)
+    client.post("/api/auth/logout")
+    from backend.models import AuditAuthEvent
+    with app.app_context():
+        events = AuditAuthEvent.query.filter_by(email="test@example.com", event_type="logout").all()
+        assert len(events) == 1
+        assert events[0].success is True
+
+
+def test_login_not_blocked_with_fewer_than_10_failures(client):
+    _signup(client)
+    for _ in range(9):
+        client.post("/api/auth/login", json={"email": "test@example.com", "password": "wrongpassword"})
+    r = client.post("/api/auth/login", json={"email": "test@example.com", "password": "wrongpassword"})
+    assert r.status_code == 401
+
+
+def test_login_brute_force_blocked_after_10_rapid_failures(client, app):
+    _signup(client)
+    for _ in range(10):
+        client.post("/api/auth/login", json={"email": "test@example.com", "password": "wrongpassword"})
+    from backend.models import AuditAuthEvent
+    with app.app_context():
+        count_before = AuditAuthEvent.query.filter_by(email="test@example.com").count()
+    r = client.post("/api/auth/login", json={"email": "test@example.com", "password": "wrongpassword"})
+    assert r.status_code == 429
+    assert "24 hours" in r.get_json()["error"]
+    with app.app_context():
+        count_after = AuditAuthEvent.query.filter_by(email="test@example.com").count()
+    assert count_after == count_before  # blocked attempt is not recorded
+
+
+def test_login_brute_force_only_returns_1h_suspension(client, app):
+    """10 failed attempts spread > 60 s but <= 10 min apart triggers the 1-hour rule."""
+    _signup(client)
+    from backend.models import AuditAuthEvent
+    from backend.extensions import db
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    with app.app_context():
+        for i in range(10):
+            db.session.add(AuditAuthEvent(
+                email="test@example.com",
+                event_type="login",
+                success=False,
+                attempted_at=now - timedelta(seconds=i * 55),
+            ))
+        db.session.commit()
+
+    r = client.post("/api/auth/login", json={"email": "test@example.com", "password": "wrongpassword"})
+    assert r.status_code == 429
+    assert "1 hour" in r.get_json()["error"]
+
+
+def test_login_blocked_returns_429_for_correct_password_too(client, app):
+    """A blocked account cannot log in even with the correct password, and the attempt is not recorded."""
+    _signup(client)
+    for _ in range(10):
+        client.post("/api/auth/login", json={"email": "test@example.com", "password": "wrongpassword"})
+    from backend.models import AuditAuthEvent
+    with app.app_context():
+        count_before = AuditAuthEvent.query.filter_by(email="test@example.com").count()
+    r = _login(client)
+    assert r.status_code == 429
+    with app.app_context():
+        count_after = AuditAuthEvent.query.filter_by(email="test@example.com").count()
+    assert count_after == count_before  # blocked attempt is not recorded
+
+
 def test_me_authenticated(client):
     _auth_client(client)
     r = client.get("/api/auth/me")

@@ -24,8 +24,8 @@ This repository contains a Python 3.12 CLI and a Flask + Vue 3 web application f
 - `backend/__init__.py` — app factory: registers blueprints, initialises DB, creates uploads directory.
 - `backend/config.py` — configuration class; reads `SECRET_KEY` and `DATABASE_URL` from environment.
 - `backend/extensions.py` — SQLAlchemy singleton (`db`).
-- `backend/models.py` — SQLAlchemy models: `User` (with `is_active`, `is_admin`, `updated_at`), `Person`, `SortResult`. Separate from root `models.py`.
-- `backend/auth.py` — `/api/auth` blueprint (signup, login, logout, me, profile) and `login_required` / `admin_required` decorators. Disabled users (`is_active=False`) are rejected at login with 403.
+- `backend/models.py` — SQLAlchemy models: `User` (with `is_active`, `is_admin`, `updated_at`), `Person`, `SortResult`, `AuditAuthEvent`. `AuditAuthEvent` (table `audit_auth_events`) records every login attempt and logout event with `email`, `event_type` (`login`/`logout`), `success`, and `attempted_at`; indexed on `(email, attempted_at)`. Separate from root `models.py`.
+- `backend/auth.py` — `/api/auth` blueprint (signup, login, logout, me, profile) and `login_required` / `admin_required` decorators. Disabled users (`is_active=False`) are rejected at login with 403. Login enforces two sliding-window rate limits checked before processing credentials, both keyed by email and recorded in `audit_auth_events`: (1) **burst rule** — 10 or more login events within any 60-second window triggers a 24-hour suspension (429); (2) **brute-force rule** — 10 or more failed login events within any 10-minute window triggers a 1-hour suspension (429). Every login attempt (including blocked ones) and every logout of an authenticated user is written to `audit_auth_events`.
 - `backend/api/__init__.py` — empty package marker.
 - `backend/api/people.py` — `/api/people` blueprint: list, create (with photo upload), get, update rating, serve photo.
 - `backend/api/sorting.py` — `/api/sorting` blueprint: run sorting, retrieve latest result.
@@ -63,7 +63,7 @@ This repository contains a Python 3.12 CLI and a Flask + Vue 3 web application f
 - `tests/test_pairing.py` — team pairing modes and balance logic.
 - `tests/test_scheduling.py` — court and time-slot assignment.
 - `tests/test_sorting_service.py` — sorting service unit tests (singles, doubles, edge cases).
-- `tests/test_api.py` — Flask API integration tests (auth, people, sorting, admin user management).
+- `tests/test_api.py` — Flask API integration tests (auth including rate-limiting and audit events, people, sorting, admin user management).
 
 ### Docker
 

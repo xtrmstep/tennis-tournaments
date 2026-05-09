@@ -89,3 +89,17 @@ class SortResult(db.Model):
             "generated_at": self.generated_at.isoformat(),
             "items": json.loads(self.items_json),
         }
+
+
+class AuditAuthEvent(db.Model):
+    __tablename__ = "audit_auth_events"
+    id: int = db.Column(db.Integer, primary_key=True)
+    email: str = db.Column(db.String(200), nullable=False)
+    event_type: str = db.Column(db.String(20), nullable=False)  # 'login' or 'logout'
+    success: bool = db.Column(db.Boolean, nullable=False)
+    attempted_at: datetime = db.Column(
+        db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    __table_args__ = (
+        db.Index("ix_audit_auth_events_email_at", "email", "attempted_at"),
+    )
