@@ -1,5 +1,7 @@
 # Repository Overview
 
+> For domain terminology and concept definitions, see [DOMAIN_GLOSSARY.md](DOMAIN_GLOSSARY.md).
+
 This repository contains a Python 3.12 CLI and a Flask + Vue 3 web application for organizing pair tennis tournaments. The CLI loads and validates participants, creates teams, optionally runs a group stage, builds a knockout bracket, assigns courts and time slots, and writes CSV/text outputs. The web application exposes the same tournament logic through a REST API with user authentication, people management, and a browser UI.
 
 ## High-Level Structure
