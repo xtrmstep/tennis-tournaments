@@ -113,7 +113,7 @@ class Competition(db.Model):
     name: str = db.Column(db.String(200), nullable=False)
     description: str | None = db.Column(db.Text, nullable=True)
     event_type: str = db.Column(db.String(20), nullable=False, default="singles")  # 'singles' or 'doubles'
-    status: str = db.Column(db.String(20), nullable=False, default="draft")  # draft/published/draw/match/finished
+    status: str = db.Column(db.String(20), nullable=False, default="draft")  # draft/published/grouping/draw/match/finished
     created_at: datetime = db.Column(
         db.DateTime, default=lambda: datetime.now(timezone.utc)
     )
@@ -121,6 +121,9 @@ class Competition(db.Model):
 
     players = db.relationship(
         "CompetitionPlayer", back_populates="competition", cascade="all, delete-orphan"
+    )
+    pairs = db.relationship(
+        "CompetitionPair", back_populates="competition", cascade="all, delete-orphan"
     )
     matches = db.relationship(
         "CompetitionMatch", back_populates="competition", cascade="all, delete-orphan"
@@ -211,6 +214,55 @@ class CompetitionMatch(db.Model):
             ),
             "score_a": self.score_a,
             "score_b": self.score_b,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class CompetitionPair(db.Model):
+    __tablename__ = "competition_pairs"
+    id: int = db.Column(db.Integer, primary_key=True)
+    competition_id: int = db.Column(
+        db.Integer, db.ForeignKey("competitions.id"), nullable=False
+    )
+    player_a_id: int = db.Column(
+        db.Integer, db.ForeignKey("competition_players.id"), nullable=False
+    )
+    player_b_id: int = db.Column(
+        db.Integer, db.ForeignKey("competition_players.id"), nullable=False
+    )
+    created_at: datetime = db.Column(
+        db.DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+    competition = db.relationship("Competition", back_populates="pairs")
+    player_a = db.relationship("CompetitionPlayer", foreign_keys=[player_a_id])
+    player_b = db.relationship("CompetitionPlayer", foreign_keys=[player_b_id])
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "competition_id", "player_a_id", name="uq_competition_pair_a"
+        ),
+        db.UniqueConstraint(
+            "competition_id", "player_b_id", name="uq_competition_pair_b"
+        ),
+    )
+
+    def to_dict(self) -> dict:
+        pa = self.player_a
+        pb = self.player_b
+        return {
+            "id": self.id,
+            "competition_id": self.competition_id,
+            "player_a_id": self.player_a_id,
+            "player_b_id": self.player_b_id,
+            "player_a_user_id": pa.user_id if pa else None,
+            "player_b_user_id": pb.user_id if pb else None,
+            "player_a_name": (
+                (pa.user.full_name or pa.user.username) if pa and pa.user else f"Player {self.player_a_id}"
+            ),
+            "player_b_name": (
+                (pb.user.full_name or pb.user.username) if pb and pb.user else f"Player {self.player_b_id}"
+            ),
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 

@@ -1240,3 +1240,220 @@ def test_competition_player_confirm_audit_recorded(client, app):
             competition_id=cid, action="player_status_changed"
         ).all()
     assert len(events) == 1
+
+
+# ---------------------------------------------------------------------------
+# Competitions — grouping stage (doubles)
+# ---------------------------------------------------------------------------
+
+def _doubles_comp_with_players(client, app, num_players=2):
+    """Create a doubles competition, publish it, add + confirm `num_players`.
+
+    Returns (competition_id, [competition_player_ids]).
+    Session ends as admin@x.com.
+    """
+    _signup(client, "admin@x.com", "password123")
+    _make_admin(app, "admin@x.com")
+    cid = client.post("/api/competitions/", json={"name": "Doubles Cup", "event_type": "doubles"}).get_json()["id"]
+    _comp_transition(client, cid, "published")
+
+    player_ids = []
+    for i in range(num_players):
+        client.post("/api/auth/logout")
+        _signup(client, f"dpl{i}@x.com", "password123")
+        pid = client.post(f"/api/competitions/{cid}/apply").get_json()["id"]
+        player_ids.append(pid)
+
+    client.post("/api/auth/logout")
+    _login(client, "admin@x.com", "password123")
+    for pid in player_ids:
+        client.patch(f"/api/competitions/{cid}/players/{pid}", json={"status": "player"})
+
+    return cid, player_ids
+
+
+def test_doubles_competition_transitions_through_grouping(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=2)
+    r = _comp_transition(client, cid, "grouping")
+    assert r.status_code == 200
+    assert r.get_json()["status"] == "grouping"
+
+    # Create pair
+    rp = client.post(f"/api/competitions/{cid}/pairs",
+                     json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]})
+    assert rp.status_code == 201
+
+    # Move to draw
+    r = _comp_transition(client, cid, "draw")
+    assert r.status_code == 200
+    assert r.get_json()["status"] == "draw"
+
+
+def test_singles_competition_skips_grouping(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client, event_type="singles").get_json()["id"]
+    _comp_transition(client, cid, "published")
+    pid = client.post(f"/api/competitions/{cid}/apply").get_json()["id"]
+    client.patch(f"/api/competitions/{cid}/players/{pid}", json={"status": "player"})
+    _signup(client, "player2@x.com", "password123")
+    pid2 = client.post(f"/api/competitions/{cid}/apply").get_json()["id"]
+    client.post("/api/auth/logout")
+    _login(client, "test@example.com", "password123")
+    _make_admin(app)
+    client.patch(f"/api/competitions/{cid}/players/{pid2}", json={"status": "player"})
+    r = _comp_transition(client, cid, "draw")
+    assert r.status_code == 200
+    assert r.get_json()["status"] == "draw"
+
+
+def test_doubles_transition_published_to_draw_directly_fails(client, app):
+    cid, _ = _doubles_comp_with_players(client, app, num_players=2)
+    r = _comp_transition(client, cid, "draw")
+    assert r.status_code == 409
+
+
+def test_singles_transition_published_to_grouping_fails(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client, event_type="singles").get_json()["id"]
+    _comp_transition(client, cid, "published")
+    r = _comp_transition(client, cid, "grouping")
+    assert r.status_code == 409
+
+
+def test_doubles_transition_to_grouping_requires_two_players(client, app):
+    _signup(client, "admin@x.com", "password123")
+    _make_admin(app, "admin@x.com")
+    cid = client.post("/api/competitions/", json={"name": "D", "event_type": "doubles"}).get_json()["id"]
+    _comp_transition(client, cid, "published")
+    # Apply but don't confirm anyone
+    r = _comp_transition(client, cid, "grouping")
+    assert r.status_code == 409
+    assert "2" in r.get_json()["error"]
+
+
+def test_create_pair_during_grouping(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "grouping")
+    r = client.post(f"/api/competitions/{cid}/pairs",
+                    json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]})
+    assert r.status_code == 201
+    data = r.get_json()
+    assert data["player_a_id"] == player_ids[0]
+    assert data["player_b_id"] == player_ids[1]
+
+
+def test_create_pair_outside_grouping_fails(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=2)
+    # Still in published state
+    r = client.post(f"/api/competitions/{cid}/pairs",
+                    json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]})
+    assert r.status_code == 409
+
+
+def test_create_pair_as_regular_user_fails(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "grouping")
+    client.post("/api/auth/logout")
+    _signup(client, "outsider@x.com", "password123")
+    r = client.post(f"/api/competitions/{cid}/pairs",
+                    json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]})
+    assert r.status_code == 403
+
+
+def test_create_pair_same_player_fails(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "grouping")
+    r = client.post(f"/api/competitions/{cid}/pairs",
+                    json={"player_a_id": player_ids[0], "player_b_id": player_ids[0]})
+    assert r.status_code == 400
+
+
+def test_create_pair_player_already_paired_fails(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=4)
+    _comp_transition(client, cid, "grouping")
+    client.post(f"/api/competitions/{cid}/pairs",
+                json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]})
+    # player_ids[0] is already in a pair
+    r = client.post(f"/api/competitions/{cid}/pairs",
+                    json={"player_a_id": player_ids[0], "player_b_id": player_ids[2]})
+    assert r.status_code == 409
+
+
+def test_grouping_to_draw_all_paired_succeeds(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "grouping")
+    client.post(f"/api/competitions/{cid}/pairs",
+                json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]})
+    r = _comp_transition(client, cid, "draw")
+    assert r.status_code == 200
+    assert r.get_json()["status"] == "draw"
+
+
+def test_grouping_to_draw_with_unpaired_player_fails(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=4)
+    _comp_transition(client, cid, "grouping")
+    # Pair only 2 of the 4 players
+    client.post(f"/api/competitions/{cid}/pairs",
+                json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]})
+    r = _comp_transition(client, cid, "draw")
+    assert r.status_code == 409
+    assert "pair" in r.get_json()["error"].lower()
+
+
+def test_grouping_to_draw_odd_player_count_fails(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=3)
+    _comp_transition(client, cid, "grouping")
+    # Even if 2 are paired, 1 is unpaired — odd count check fires first
+    client.post(f"/api/competitions/{cid}/pairs",
+                json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]})
+    r = _comp_transition(client, cid, "draw")
+    assert r.status_code == 409
+
+
+def test_delete_pair_during_grouping(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "grouping")
+    pair_id = client.post(f"/api/competitions/{cid}/pairs",
+                          json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]}).get_json()["id"]
+    r = client.delete(f"/api/competitions/{cid}/pairs/{pair_id}")
+    assert r.status_code == 204
+    pairs = client.get(f"/api/competitions/{cid}/pairs").get_json()
+    assert len(pairs) == 0
+
+
+def test_delete_pair_outside_grouping_fails(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "grouping")
+    pair_id = client.post(f"/api/competitions/{cid}/pairs",
+                          json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]}).get_json()["id"]
+    _comp_transition(client, cid, "draw")
+    r = client.delete(f"/api/competitions/{cid}/pairs/{pair_id}")
+    assert r.status_code == 409
+
+
+def test_pair_audit_event_recorded(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "grouping")
+    client.post(f"/api/competitions/{cid}/pairs",
+                json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]})
+    from backend.models import AuditCompetitionEvent
+    with app.app_context():
+        events = AuditCompetitionEvent.query.filter_by(
+            competition_id=cid, action="pair_created"
+        ).all()
+    assert len(events) == 1
+
+
+def test_list_pairs_returns_correct_data(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "grouping")
+    client.post(f"/api/competitions/{cid}/pairs",
+                json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]})
+    r = client.get(f"/api/competitions/{cid}/pairs")
+    assert r.status_code == 200
+    data = r.get_json()
+    assert len(data) == 1
+    assert data[0]["player_a_id"] == player_ids[0]
+    assert data[0]["player_b_id"] == player_ids[1]

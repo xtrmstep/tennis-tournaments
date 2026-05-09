@@ -88,3 +88,15 @@ export const setMatchScore = (competitionId, matchId, scoreA, scoreB) =>
     score_a: scoreA,
     score_b: scoreB,
   })
+
+// Competition pairs (doubles grouping)
+export const getCompetitionPairs = (id) => api.get(`/competitions/${id}/pairs`)
+
+export const createPair = (competitionId, playerAId, playerBId) =>
+  api.post(`/competitions/${competitionId}/pairs`, {
+    player_a_id: playerAId,
+    player_b_id: playerBId,
+  })
+
+export const deletePair = (competitionId, pairId) =>
+  api.delete(`/competitions/${competitionId}/pairs/${pairId}`)

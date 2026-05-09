@@ -11,18 +11,33 @@ from ..models import (
     AuditCompetitionEvent,
     Competition,
     CompetitionMatch,
+    CompetitionPair,
     CompetitionPlayer,
     User,
 )
 
 competitions_bp = Blueprint("competitions", __name__)
 
-_NEXT_STATUS: dict[str, str] = {
+# Doubles lifecycle: draft → published → grouping → draw → match → finished
+# Singles lifecycle: draft → published → draw → match → finished
+_SINGLES_NEXT: dict[str, str] = {
     "draft": "published",
     "published": "draw",
     "draw": "match",
     "match": "finished",
 }
+_DOUBLES_NEXT: dict[str, str] = {
+    "draft": "published",
+    "published": "grouping",
+    "grouping": "draw",
+    "draw": "match",
+    "match": "finished",
+}
+
+
+def _next_status(comp: Competition) -> str | None:
+    mapping = _DOUBLES_NEXT if comp.event_type == "doubles" else _SINGLES_NEXT
+    return mapping.get(comp.status)
 
 
 def _current_user() -> User:
@@ -161,7 +176,7 @@ def transition_competition(competition_id: int):
 
     data = request.get_json(silent=True) or {}
     requested = data.get("status", "")
-    expected = _NEXT_STATUS.get(comp.status)
+    expected = _next_status(comp)
     if requested != expected:
         return jsonify(
             {
@@ -173,7 +188,22 @@ def transition_competition(competition_id: int):
         ), 409
 
     # Guards per target state
-    if requested == "draw":
+    if requested == "grouping":
+        # Only doubles competitions reach this state
+        player_count = CompetitionPlayer.query.filter_by(
+            competition_id=comp.id, status="player"
+        ).count()
+        if player_count < 2:
+            return jsonify(
+                {
+                    "error": (
+                        f"Need at least 2 confirmed players to start grouping "
+                        f"(currently {player_count})."
+                    )
+                }
+            ), 409
+
+    elif requested == "draw":
         player_count = CompetitionPlayer.query.filter_by(
             competition_id=comp.id, status="player"
         ).count()
@@ -186,6 +216,36 @@ def transition_competition(competition_id: int):
                     )
                 }
             ), 409
+        if comp.event_type == "doubles":
+            if player_count % 2 != 0:
+                return jsonify(
+                    {
+                        "error": (
+                            f"Doubles competitions require an even number of confirmed players "
+                            f"(currently {player_count})."
+                        )
+                    }
+                ), 409
+            paired_ids: set[int] = set()
+            for pair in CompetitionPair.query.filter_by(competition_id=comp.id).all():
+                paired_ids.add(pair.player_a_id)
+                paired_ids.add(pair.player_b_id)
+            confirmed_ids = {
+                cp.id
+                for cp in CompetitionPlayer.query.filter_by(
+                    competition_id=comp.id, status="player"
+                ).all()
+            }
+            unpaired = confirmed_ids - paired_ids
+            if unpaired:
+                return jsonify(
+                    {
+                        "error": (
+                            f"{len(unpaired)} confirmed player(s) have no pair assigned. "
+                            "All confirmed players must be paired before starting draw."
+                        )
+                    }
+                ), 409
 
     elif requested == "match":
         match_count = CompetitionMatch.query.filter_by(competition_id=comp.id).count()
@@ -451,3 +511,104 @@ def set_score(competition_id: int, match_id: int):
         )
     db.session.commit()
     return jsonify(match.to_dict()), 200
+
+
+# ---------------------------------------------------------------------------
+# Pairs (doubles grouping stage)
+# ---------------------------------------------------------------------------
+
+
+@competitions_bp.get("/<int:competition_id>/pairs")
+@login_required
+def list_pairs(competition_id: int):
+    user = _current_user()
+    comp = db.session.get(Competition, competition_id)
+    if not comp or (comp.status == "draft" and not _can_manage(user)):
+        return jsonify({"error": "Competition not found"}), 404
+    pairs = CompetitionPair.query.filter_by(competition_id=comp.id).all()
+    return jsonify([p.to_dict() for p in pairs]), 200
+
+
+@competitions_bp.post("/<int:competition_id>/pairs")
+@moderator_or_admin_required
+def create_pair(competition_id: int):
+    user = _current_user()
+    comp = db.session.get(Competition, competition_id)
+    if not comp:
+        return jsonify({"error": "Competition not found"}), 404
+    if comp.event_type != "doubles":
+        return jsonify({"error": "Pairs only exist in doubles competitions."}), 409
+    if comp.status != "grouping":
+        return jsonify({"error": "Pairs can only be created during the grouping phase."}), 409
+
+    data = request.get_json(silent=True) or {}
+    player_a_id = data.get("player_a_id")
+    player_b_id = data.get("player_b_id")
+
+    if not player_a_id or not player_b_id:
+        return jsonify({"error": "player_a_id and player_b_id are required"}), 400
+    if player_a_id == player_b_id:
+        return jsonify({"error": "A player cannot be paired with themselves."}), 400
+
+    pa = CompetitionPlayer.query.filter_by(
+        id=player_a_id, competition_id=comp.id, status="player"
+    ).first()
+    pb = CompetitionPlayer.query.filter_by(
+        id=player_b_id, competition_id=comp.id, status="player"
+    ).first()
+
+    if not pa:
+        return jsonify({"error": "Player A not found or not confirmed in this competition."}), 404
+    if not pb:
+        return jsonify({"error": "Player B not found or not confirmed in this competition."}), 404
+
+    # Check neither player is already in a pair
+    already_paired = CompetitionPair.query.filter_by(competition_id=comp.id).filter(
+        db.or_(
+            CompetitionPair.player_a_id.in_([player_a_id, player_b_id]),
+            CompetitionPair.player_b_id.in_([player_a_id, player_b_id]),
+        )
+    ).first()
+    if already_paired:
+        return jsonify({"error": "One or both players are already in a pair."}), 409
+
+    pair = CompetitionPair(
+        competition_id=comp.id,
+        player_a_id=player_a_id,
+        player_b_id=player_b_id,
+    )
+    db.session.add(pair)
+    db.session.flush()
+    _audit(
+        comp.id,
+        user.id,
+        "pair_created",
+        {"pair_id": pair.id, "player_a_id": player_a_id, "player_b_id": player_b_id},
+    )
+    db.session.commit()
+    return jsonify(pair.to_dict()), 201
+
+
+@competitions_bp.delete("/<int:competition_id>/pairs/<int:pair_id>")
+@moderator_or_admin_required
+def delete_pair(competition_id: int, pair_id: int):
+    user = _current_user()
+    comp = db.session.get(Competition, competition_id)
+    if not comp:
+        return jsonify({"error": "Competition not found"}), 404
+    if comp.status != "grouping":
+        return jsonify({"error": "Pairs can only be removed during the grouping phase."}), 409
+
+    pair = CompetitionPair.query.filter_by(id=pair_id, competition_id=comp.id).first()
+    if not pair:
+        return jsonify({"error": "Pair not found"}), 404
+
+    _audit(
+        comp.id,
+        user.id,
+        "pair_deleted",
+        {"pair_id": pair_id},
+    )
+    db.session.delete(pair)
+    db.session.commit()
+    return "", 204

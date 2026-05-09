@@ -113,6 +113,66 @@
       <p v-else style="color: #888;">No participants yet.</p>
     </section>
 
+    <!-- Grouping section (doubles, grouping state) -->
+    <section v-if="competition.event_type === 'doubles' && ['grouping', 'draw', 'match', 'finished'].includes(competition.status)" style="margin-bottom: 2rem;">
+      <h3 style="margin-bottom: 0.5rem;">Pairs</h3>
+
+      <!-- Create pair form (mod/admin, grouping state) -->
+      <div v-if="canManage && competition.status === 'grouping'" style="background: #f5f5f5; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+        <strong>Create Pair</strong>
+        <div style="display: flex; gap: 0.5rem; align-items: flex-end; margin-top: 0.5rem; flex-wrap: wrap;">
+          <div>
+            <label style="display: block; font-size: 0.85rem;">Player A</label>
+            <select v-model="newPair.playerA" style="padding: 0.4rem;">
+              <option value="">Select…</option>
+              <option v-for="p in unpairedPlayers" :key="p.id" :value="p.id">
+                {{ p.full_name || p.username || p.user_id }}
+              </option>
+            </select>
+          </div>
+          <div>
+            <label style="display: block; font-size: 0.85rem;">Player B</label>
+            <select v-model="newPair.playerB" style="padding: 0.4rem;">
+              <option value="">Select…</option>
+              <option v-for="p in unpairedPlayers" :key="p.id" :value="p.id">
+                {{ p.full_name || p.username || p.user_id }}
+              </option>
+            </select>
+          </div>
+          <button
+            @click="addPair"
+            style="padding: 0.4rem 1rem; background: #2c5f2e; color: white; border: none; cursor: pointer; border-radius: 4px;"
+          >Add Pair</button>
+        </div>
+        <p v-if="pairError" style="color: red; margin-top: 0.4rem;">{{ pairError }}</p>
+      </div>
+
+      <table v-if="pairs.length" style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr>
+            <th style="text-align: left; padding: 0.4rem; border-bottom: 1px solid #ccc;">#</th>
+            <th style="text-align: left; padding: 0.4rem; border-bottom: 1px solid #ccc;">Player A</th>
+            <th style="text-align: left; padding: 0.4rem; border-bottom: 1px solid #ccc;">Player B</th>
+            <th v-if="canManage && competition.status === 'grouping'" style="padding: 0.4rem; border-bottom: 1px solid #ccc;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(pair, idx) in pairs" :key="pair.id">
+            <td style="padding: 0.4rem;">{{ idx + 1 }}</td>
+            <td style="padding: 0.4rem;">{{ pair.player_a_name }}</td>
+            <td style="padding: 0.4rem;">{{ pair.player_b_name }}</td>
+            <td v-if="canManage && competition.status === 'grouping'" style="padding: 0.4rem;">
+              <button
+                @click="removePair(pair.id)"
+                style="padding: 0.2rem 0.6rem; background: #a00; color: white; border: none; cursor: pointer; border-radius: 3px; font-size: 0.85rem;"
+              >Remove</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <p v-else style="color: #888;">No pairs yet.</p>
+    </section>
+
     <!-- Matches section (draw / match / finished) -->
     <section v-if="['draw', 'match', 'finished'].includes(competition.status)">
       <h3 style="margin-bottom: 0.5rem;">Matches</h3>
@@ -216,6 +276,9 @@ import {
   getCompetitionMatches,
   createMatch,
   setMatchScore,
+  getCompetitionPairs,
+  createPair,
+  deletePair,
 } from '../services/api'
 
 const route = useRoute()
@@ -224,6 +287,7 @@ const id = route.params.id
 const competition = ref({ name: '', status: '', event_type: '', description: '' })
 const players = ref([])
 const matches = ref([])
+const pairs = ref([])
 const currentUser = ref(null)
 const loadError = ref('')
 
@@ -238,9 +302,19 @@ const myPlayerEntry = computed(() =>
     : null
 )
 const nextStatus = computed(() => {
-  const map = { draft: 'published', published: 'draw', draw: 'match', match: 'finished' }
-  return map[competition.value.status] || null
+  const isDoubles = competition.value.event_type === 'doubles'
+  const singles = { draft: 'published', published: 'draw', draw: 'match', match: 'finished' }
+  const doubles = { draft: 'published', published: 'grouping', grouping: 'draw', draw: 'match', match: 'finished' }
+  return (isDoubles ? doubles : singles)[competition.value.status] || null
 })
+const pairedPlayerIds = computed(() => {
+  const ids = new Set()
+  pairs.value.forEach(p => { ids.add(p.player_a_id); ids.add(p.player_b_id) })
+  return ids
+})
+const unpairedPlayers = computed(() =>
+  confirmedPlayers.value.filter(p => !pairedPlayerIds.value.has(p.id))
+)
 
 // Score inputs keyed by match id
 const scoreInputs = ref({})
@@ -260,12 +334,17 @@ const applyError = ref('')
 const newMatch = ref({ playerA: '', playerB: '' })
 const matchError = ref('')
 
+// New pair
+const newPair = ref({ playerA: '', playerB: '' })
+const pairError = ref('')
+
 // Score
 const scoreError = ref('')
 
 const STATUS_COLORS = {
   draft: '#888',
   published: '#2c5f2e',
+  grouping: '#7a3db0',
   draw: '#1a6ea0',
   match: '#c07000',
   finished: '#555',
@@ -312,6 +391,10 @@ async function load() {
       event_type: compRes.data.event_type,
     }
 
+    if (['grouping', 'draw', 'match', 'finished'].includes(compRes.data.status) && compRes.data.event_type === 'doubles') {
+      const pairsRes = await getCompetitionPairs(id)
+      pairs.value = pairsRes.data
+    }
     if (['draw', 'match', 'finished'].includes(compRes.data.status)) {
       const matchRes = await getCompetitionMatches(id)
       matches.value = matchRes.data
@@ -338,6 +421,10 @@ async function doTransition() {
   try {
     const res = await transitionCompetition(id, nextStatus.value)
     competition.value = res.data
+    if (['grouping', 'draw', 'match', 'finished'].includes(res.data.status) && res.data.event_type === 'doubles') {
+      const pairsRes = await getCompetitionPairs(id)
+      pairs.value = pairsRes.data
+    }
     if (['draw', 'match', 'finished'].includes(res.data.status)) {
       const matchRes = await getCompetitionMatches(id)
       matches.value = matchRes.data
@@ -400,6 +487,32 @@ async function deletePlayer(playerId) {
     players.value = res.data
   } catch (e) {
     loadError.value = e.response?.data?.error || 'Failed to remove player.'
+  }
+}
+
+async function addPair() {
+  pairError.value = ''
+  if (!newPair.value.playerA || !newPair.value.playerB) {
+    pairError.value = 'Select both players.'
+    return
+  }
+  try {
+    await createPair(id, newPair.value.playerA, newPair.value.playerB)
+    newPair.value = { playerA: '', playerB: '' }
+    const res = await getCompetitionPairs(id)
+    pairs.value = res.data
+  } catch (e) {
+    pairError.value = e.response?.data?.error || 'Failed to create pair.'
+  }
+}
+
+async function removePair(pairId) {
+  try {
+    await deletePair(id, pairId)
+    const res = await getCompetitionPairs(id)
+    pairs.value = res.data
+  } catch (e) {
+    pairError.value = e.response?.data?.error || 'Failed to remove pair.'
   }
 }
 
