@@ -122,6 +122,10 @@
         <strong>Create Pair</strong>
         <div style="display: flex; gap: 0.5rem; align-items: flex-end; margin-top: 0.5rem; flex-wrap: wrap;">
           <div>
+            <label style="display: block; font-size: 0.85rem;">Team name (optional)</label>
+            <input v-model="newPair.teamName" maxlength="100" placeholder="e.g. Team Rocket" style="padding: 0.4rem; width: 12rem;" />
+          </div>
+          <div>
             <label style="display: block; font-size: 0.85rem;">Player A</label>
             <select v-model="newPair.playerA" style="padding: 0.4rem;">
               <option value="">Select…</option>
@@ -151,6 +155,7 @@
         <thead>
           <tr>
             <th style="text-align: left; padding: 0.4rem; border-bottom: 1px solid #ccc;">#</th>
+            <th style="text-align: left; padding: 0.4rem; border-bottom: 1px solid #ccc;">Team</th>
             <th style="text-align: left; padding: 0.4rem; border-bottom: 1px solid #ccc;">Player A</th>
             <th style="text-align: left; padding: 0.4rem; border-bottom: 1px solid #ccc;">Player B</th>
             <th v-if="canManage && competition.status === 'grouping'" style="padding: 0.4rem; border-bottom: 1px solid #ccc;"></th>
@@ -159,6 +164,7 @@
         <tbody>
           <tr v-for="(pair, idx) in pairs" :key="pair.id">
             <td style="padding: 0.4rem;">{{ idx + 1 }}</td>
+            <td style="padding: 0.4rem; font-weight: 600;">{{ pair.team_name }}</td>
             <td style="padding: 0.4rem;">{{ pair.player_a_name }}</td>
             <td style="padding: 0.4rem;">{{ pair.player_b_name }}</td>
             <td v-if="canManage && competition.status === 'grouping'" style="padding: 0.4rem;">
@@ -335,7 +341,7 @@ const newMatch = ref({ playerA: '', playerB: '' })
 const matchError = ref('')
 
 // New pair
-const newPair = ref({ playerA: '', playerB: '' })
+const newPair = ref({ playerA: '', playerB: '', teamName: '' })
 const pairError = ref('')
 
 // Score
@@ -497,8 +503,8 @@ async function addPair() {
     return
   }
   try {
-    await createPair(id, newPair.value.playerA, newPair.value.playerB)
-    newPair.value = { playerA: '', playerB: '' }
+    await createPair(id, newPair.value.playerA, newPair.value.playerB, newPair.value.teamName || undefined)
+    newPair.value = { playerA: '', playerB: '', teamName: '' }
     const res = await getCompetitionPairs(id)
     pairs.value = res.data
   } catch (e) {

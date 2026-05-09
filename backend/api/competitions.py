@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import string
 from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request, session
@@ -550,6 +551,14 @@ def create_pair(competition_id: int):
     if player_a_id == player_b_id:
         return jsonify({"error": "A player cannot be paired with themselves."}), 400
 
+    team_name = data.get("team_name")
+    if team_name is not None:
+        team_name = team_name.strip()
+        if len(team_name) > 100:
+            return jsonify({"error": "team_name must be 100 characters or fewer."}), 400
+        if not team_name:
+            team_name = None
+
     pa = CompetitionPlayer.query.filter_by(
         id=player_a_id, competition_id=comp.id, status="player"
     ).first()
@@ -572,10 +581,17 @@ def create_pair(competition_id: int):
     if already_paired:
         return jsonify({"error": "One or both players are already in a pair."}), 409
 
+    # Auto-generate team name from CLI pattern (Team A, Team B, …) when not supplied
+    if team_name is None:
+        existing_count = CompetitionPair.query.filter_by(competition_id=comp.id).count()
+        letter = string.ascii_uppercase[existing_count % 26]
+        team_name = f"Team {letter}"
+
     pair = CompetitionPair(
         competition_id=comp.id,
         player_a_id=player_a_id,
         player_b_id=player_b_id,
+        team_name=team_name,
     )
     db.session.add(pair)
     db.session.flush()

@@ -230,6 +230,7 @@ class CompetitionPair(db.Model):
     player_b_id: int = db.Column(
         db.Integer, db.ForeignKey("competition_players.id"), nullable=False
     )
+    team_name: str | None = db.Column(db.String(100), nullable=True)
     created_at: datetime = db.Column(
         db.DateTime, default=lambda: datetime.now(timezone.utc)
     )
@@ -255,6 +256,7 @@ class CompetitionPair(db.Model):
             "competition_id": self.competition_id,
             "player_a_id": self.player_a_id,
             "player_b_id": self.player_b_id,
+            "team_name": self.team_name,
             "player_a_user_id": pa.user_id if pa else None,
             "player_b_user_id": pb.user_id if pb else None,
             "player_a_name": (

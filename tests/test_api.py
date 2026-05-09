@@ -1457,3 +1457,34 @@ def test_list_pairs_returns_correct_data(client, app):
     assert len(data) == 1
     assert data[0]["player_a_id"] == player_ids[0]
     assert data[0]["player_b_id"] == player_ids[1]
+
+
+def test_create_pair_with_team_name(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "grouping")
+    r = client.post(f"/api/competitions/{cid}/pairs",
+                    json={"player_a_id": player_ids[0], "player_b_id": player_ids[1],
+                          "team_name": "Team Rocket"})
+    assert r.status_code == 201
+    assert r.get_json()["team_name"] == "Team Rocket"
+    # List also returns name
+    data = client.get(f"/api/competitions/{cid}/pairs").get_json()
+    assert data[0]["team_name"] == "Team Rocket"
+
+
+def test_create_pair_without_team_name_auto_generates(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "grouping")
+    r = client.post(f"/api/competitions/{cid}/pairs",
+                    json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]})
+    assert r.status_code == 201
+    assert r.get_json()["team_name"] == "Team A"
+
+
+def test_create_pair_team_name_too_long_rejected(client, app):
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "grouping")
+    r = client.post(f"/api/competitions/{cid}/pairs",
+                    json={"player_a_id": player_ids[0], "player_b_id": player_ids[1],
+                          "team_name": "x" * 101})
+    assert r.status_code == 400
