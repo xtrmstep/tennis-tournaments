@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import functools
+from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request, session
 
@@ -15,6 +16,19 @@ def login_required(f):
     def decorated(*args, **kwargs):
         if "user_id" not in session:
             return jsonify({"error": "Authentication required"}), 401
+        return f(*args, **kwargs)
+
+    return decorated
+
+
+def admin_required(f):
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        if "user_id" not in session:
+            return jsonify({"error": "Authentication required"}), 401
+        user = db.session.get(User, session["user_id"])
+        if not user or not user.is_admin:
+            return jsonify({"error": "Admin access required"}), 403
         return f(*args, **kwargs)
 
     return decorated
@@ -55,6 +69,8 @@ def login():
     user = User.query.filter_by(email=email).first()
     if not user or not user.check_password(password):
         return jsonify({"error": "Invalid credentials"}), 401
+    if not user.is_active:
+        return jsonify({"error": "Account is disabled"}), 403
 
     session["user_id"] = user.id
     return jsonify(user.to_dict()), 200
@@ -107,6 +123,7 @@ def update_profile():
     user.username = username
     user.skill_level = skill_level
     user.gender = gender
+    user.updated_at = datetime.now(timezone.utc)
     db.session.commit()
 
     return jsonify(user.to_dict()), 200

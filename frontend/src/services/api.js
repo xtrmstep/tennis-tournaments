@@ -37,3 +37,9 @@ export const runSorting = (mode, seed = undefined) =>
   api.post('/sorting/run', { mode, seed })
 
 export const getSortResult = () => api.get('/sorting/result')
+
+export const adminListUsers = () => api.get('/admin/users')
+
+export const adminPatchUser = (id, data) => api.patch(`/admin/users/${id}`, data)
+
+export const adminDeleteUser = (id) => api.delete(`/admin/users/${id}`)

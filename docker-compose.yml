@@ -1,17 +1,37 @@
 services:
 
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tennis}
+      POSTGRES_USER: ${POSTGRES_USER:-tennis}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tennis}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tennis} -d ${POSTGRES_DB:-tennis}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   backend:
     build:
       context: .
       dockerfile: Dockerfile
     environment:
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
-      DATABASE_URL: ${DATABASE_URL:-sqlite:///app.db}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://tennis:tennis@db:5432/tennis}
       FLASK_DEBUG: ${FLASK_DEBUG:-0}
     volumes:
       - backend_instance:/app/instance
     ports:
       - "5000:5000"
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
 
   frontend:
@@ -25,4 +45,5 @@ services:
     restart: unless-stopped
 
 volumes:
+  postgres_data:
   backend_instance:

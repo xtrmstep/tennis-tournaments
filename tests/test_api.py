@@ -330,3 +330,128 @@ def test_sorting_doubles_odd_count_returns_400(client):
     _add_people(client, 3)
     r = client.post("/api/sorting/run", json={"mode": "doubles"})
     assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Admin helpers
+# ---------------------------------------------------------------------------
+
+def _make_admin(app, email="test@example.com"):
+    """Directly set is_admin=True for the given user via DB."""
+    from backend.models import User
+    with app.app_context():
+        user = User.query.filter_by(email=email).first()
+        user.is_admin = True
+        from backend.extensions import db
+        db.session.commit()
+
+
+def _admin_client(client, app):
+    _signup(client)
+    _make_admin(app)
+    return client
+
+
+# ---------------------------------------------------------------------------
+# Admin - users
+# ---------------------------------------------------------------------------
+
+def test_admin_list_users_unauthenticated(client):
+    r = client.get("/api/admin/users")
+    assert r.status_code == 401
+
+
+def test_admin_list_users_non_admin(client):
+    _auth_client(client)
+    r = client.get("/api/admin/users")
+    assert r.status_code == 403
+
+
+def test_admin_list_users_as_admin(client, app):
+    _admin_client(client, app)
+    r = client.get("/api/admin/users")
+    assert r.status_code == 200
+    data = r.get_json()
+    assert isinstance(data, list)
+    assert any(u["email"] == "test@example.com" for u in data)
+
+
+def test_admin_user_has_expected_fields(client, app):
+    _admin_client(client, app)
+    r = client.get("/api/admin/users")
+    user = r.get_json()[0]
+    for field in ("id", "email", "profile_complete", "is_active", "is_admin", "updated_at", "created_at"):
+        assert field in user
+
+
+def test_admin_disable_user(client, app):
+    _signup(client, email="target@example.com", password="password123")
+    client.post("/api/auth/logout")
+    _signup(client)
+    _make_admin(app)
+    users = client.get("/api/admin/users").get_json()
+    target = next(u for u in users if u["email"] == "target@example.com")
+    r = client.patch(f"/api/admin/users/{target['id']}", json={"is_active": False})
+    assert r.status_code == 200
+    assert r.get_json()["is_active"] is False
+
+
+def test_admin_enable_user(client, app):
+    _signup(client, email="target@example.com", password="password123")
+    client.post("/api/auth/logout")
+    _signup(client)
+    _make_admin(app)
+    users = client.get("/api/admin/users").get_json()
+    target = next(u for u in users if u["email"] == "target@example.com")
+    client.patch(f"/api/admin/users/{target['id']}", json={"is_active": False})
+    r = client.patch(f"/api/admin/users/{target['id']}", json={"is_active": True})
+    assert r.status_code == 200
+    assert r.get_json()["is_active"] is True
+
+
+def test_admin_cannot_disable_self(client, app):
+    _admin_client(client, app)
+    users = client.get("/api/admin/users").get_json()
+    me = next(u for u in users if u["email"] == "test@example.com")
+    r = client.patch(f"/api/admin/users/{me['id']}", json={"is_active": False})
+    assert r.status_code == 403
+
+
+def test_admin_delete_user(client, app):
+    _signup(client, email="victim@example.com", password="password123")
+    client.post("/api/auth/logout")
+    _signup(client)
+    _make_admin(app)
+    users = client.get("/api/admin/users").get_json()
+    target = next(u for u in users if u["email"] == "victim@example.com")
+    r = client.delete(f"/api/admin/users/{target['id']}")
+    assert r.status_code == 204
+    users_after = client.get("/api/admin/users").get_json()
+    assert all(u["email"] != "victim@example.com" for u in users_after)
+
+
+def test_admin_cannot_delete_self(client, app):
+    _admin_client(client, app)
+    users = client.get("/api/admin/users").get_json()
+    me = next(u for u in users if u["email"] == "test@example.com")
+    r = client.delete(f"/api/admin/users/{me['id']}")
+    assert r.status_code == 403
+
+
+def test_admin_delete_nonexistent_user(client, app):
+    _admin_client(client, app)
+    r = client.delete("/api/admin/users/99999")
+    assert r.status_code == 404
+
+
+def test_disabled_user_cannot_login(client, app):
+    _signup(client, email="disabled@example.com", password="password123")
+    client.post("/api/auth/logout")
+    _signup(client)
+    _make_admin(app)
+    users = client.get("/api/admin/users").get_json()
+    target = next(u for u in users if u["email"] == "disabled@example.com")
+    client.patch(f"/api/admin/users/{target['id']}", json={"is_active": False})
+    client.post("/api/auth/logout")
+    r = _login(client, email="disabled@example.com", password="password123")
+    assert r.status_code == 403

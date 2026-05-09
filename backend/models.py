@@ -17,9 +17,12 @@ class User(db.Model):
     username: str | None = db.Column(db.String(100), unique=True, nullable=True)
     skill_level: int | None = db.Column(db.Integer, nullable=True)  # 0-10
     gender: str | None = db.Column(db.String(50), nullable=True)
+    is_active: bool = db.Column(db.Boolean, nullable=False, default=True)
+    is_admin: bool = db.Column(db.Boolean, nullable=False, default=False)
     created_at: datetime = db.Column(
         db.DateTime, default=lambda: datetime.now(timezone.utc)
     )
+    updated_at: datetime | None = db.Column(db.DateTime, nullable=True)
 
     @property
     def profile_complete(self) -> bool:
@@ -43,6 +46,10 @@ class User(db.Model):
             "skill_level": self.skill_level,
             "gender": self.gender,
             "profile_complete": self.profile_complete,
+            "is_active": self.is_active,
+            "is_admin": self.is_admin,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
 

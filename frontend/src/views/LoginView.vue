@@ -21,10 +21,11 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter, RouterLink } from 'vue-router'
+import { useRouter, useRoute, RouterLink } from 'vue-router'
 import { login } from '../services/api'
 
 const router = useRouter()
+const route = useRoute()
 const email = ref('')
 const password = ref('')
 const error = ref('')
@@ -35,7 +36,12 @@ async function handleSubmit() {
   loading.value = true
   try {
     const res = await login(email.value, password.value)
-    router.push(res.data.profile_complete ? '/people' : '/profile')
+    if (!res.data.profile_complete) {
+      router.push('/profile')
+    } else {
+      const next = route.query.next
+      router.push(next && next !== '/login' ? next : '/people')
+    }
   } catch (e) {
     error.value = e.response?.data?.error || 'Login failed'
   } finally {
