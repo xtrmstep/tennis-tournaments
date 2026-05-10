@@ -301,7 +301,7 @@ class AuditCompetitionEvent(db.Model):
     __tablename__ = "audit_competition_events"
     id: int = db.Column(db.Integer, primary_key=True)
     competition_id: int = db.Column(
-        db.Integer, db.ForeignKey("competitions.id"), nullable=False
+        db.Integer, db.ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False
     )
     user_id: int = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     action: str = db.Column(db.String(50), nullable=False)

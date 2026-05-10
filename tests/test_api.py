@@ -960,6 +960,33 @@ def test_competition_list_draft_visible_to_admin(client, app):
     assert len(r.get_json()) == 1
 
 
+def test_manager_can_delete_competition(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client).get_json()["id"]
+    r = client.delete(f"/api/competitions/{cid}")
+    assert r.status_code == 204
+    assert client.get(f"/api/competitions/{cid}").status_code == 404
+
+
+def test_regular_user_cannot_delete_competition(client, app):
+    _signup(client)
+    _make_admin(app)
+    cid = _comp_create(client).get_json()["id"]
+    _comp_transition(client, cid, "published")
+    client.post("/api/auth/logout")
+    _signup(client, "player@x.com", "password123")
+    r = client.delete(f"/api/competitions/{cid}")
+    assert r.status_code == 403
+
+
+def test_delete_nonexistent_competition(client, app):
+    _signup(client)
+    _make_admin(app)
+    r = client.delete("/api/competitions/99999")
+    assert r.status_code == 404
+
+
 def test_competition_list_includes_counts(client, app):
     _signup(client)
     _make_admin(app)
@@ -1425,14 +1452,54 @@ def test_delete_pair_during_grouping(client, app):
     assert len(pairs) == 0
 
 
-def test_delete_pair_outside_grouping_fails(client, app):
+def test_delete_pair_during_draw_succeeds(client, app):
+    """Managers can delete a pair in draw state (before match phase)."""
     cid, player_ids = _doubles_comp_with_players(client, app, num_players=2)
     _comp_transition(client, cid, "grouping")
     pair_id = client.post(f"/api/competitions/{cid}/pairs",
                           json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]}).get_json()["id"]
     _comp_transition(client, cid, "draw")
     r = client.delete(f"/api/competitions/{cid}/pairs/{pair_id}")
+    assert r.status_code == 204
+
+
+def test_delete_pair_in_match_state_fails(client, app):
+    """Pair deletion is rejected once competition reaches match state."""
+    cid, player_ids = _comp_setup_in_match_state(client, app)
+    with app.app_context():
+        from backend.models import CompetitionPair
+        pairs = CompetitionPair.query.filter_by(competition_id=cid).all()
+        if not pairs:
+            return  # no pairs in singles comp, skip
+        pair_id = pairs[0].id
+    r = client.delete(f"/api/competitions/{cid}/pairs/{pair_id}")
     assert r.status_code == 409
+
+
+def test_participant_can_delete_own_pair(client, app):
+    """Only managers can remove pairs; a participant gets 403 even for their own pair."""
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=2)
+    _comp_transition(client, cid, "grouping")
+    pair_id = client.post(f"/api/competitions/{cid}/pairs",
+                          json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]}).get_json()["id"]
+    client.post("/api/auth/logout")
+    _login(client, "dpl0@x.com", "password123")
+    r = client.delete(f"/api/competitions/{cid}/pairs/{pair_id}")
+    assert r.status_code == 403
+
+
+def test_participant_cannot_delete_others_pair(client, app):
+    """A participant cannot delete a pair they don't belong to."""
+    cid, player_ids = _doubles_comp_with_players(client, app, num_players=4)
+    _comp_transition(client, cid, "grouping")
+    # Pair only players 0 and 1
+    pair_id = client.post(f"/api/competitions/{cid}/pairs",
+                          json={"player_a_id": player_ids[0], "player_b_id": player_ids[1]}).get_json()["id"]
+    # dpl2 is not in this pair
+    client.post("/api/auth/logout")
+    _login(client, "dpl2@x.com", "password123")
+    r = client.delete(f"/api/competitions/{cid}/pairs/{pair_id}")
+    assert r.status_code == 403
 
 
 def test_pair_audit_event_recorded(client, app):

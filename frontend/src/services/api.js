@@ -60,6 +60,8 @@ export const getCompetition = (id) => api.get(`/competitions/${id}`)
 
 export const updateCompetition = (id, data) => api.put(`/competitions/${id}`, data)
 
+export const deleteCompetition = (id) => api.delete(`/competitions/${id}`)
+
 export const transitionCompetition = (id, status) =>
   api.post(`/competitions/${id}/transition`, { status })
 

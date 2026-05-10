@@ -167,6 +167,19 @@ def update_competition(competition_id: int):
     return jsonify(comp.to_dict()), 200
 
 
+@competitions_bp.delete("/<int:competition_id>")
+@moderator_or_admin_required
+def delete_competition(competition_id: int):
+    user = _current_user()
+    comp = db.session.get(Competition, competition_id)
+    if not comp:
+        return jsonify({"error": "Competition not found"}), 404
+    _audit(comp.id, user.id, "competition_deleted", {"name": comp.name})
+    db.session.delete(comp)
+    db.session.commit()
+    return "", 204
+
+
 # ---------------------------------------------------------------------------
 # Lifecycle transitions
 # ---------------------------------------------------------------------------
@@ -635,8 +648,8 @@ def delete_pair(competition_id: int, pair_id: int):
     comp = db.session.get(Competition, competition_id)
     if not comp:
         return jsonify({"error": "Competition not found"}), 404
-    if comp.status != "grouping":
-        return jsonify({"error": "Pairs can only be removed during the grouping phase."}), 409
+    if comp.status not in ("grouping", "draw"):
+        return jsonify({"error": "Pairs can only be removed before the match phase."}), 409
 
     pair = CompetitionPair.query.filter_by(id=pair_id, competition_id=comp.id).first()
     if not pair:
