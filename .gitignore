@@ -1,2 +1,7 @@
 __pycache__/
 out/
+instance/
+*.db
+node_modules/
+frontend/dist/
+.env

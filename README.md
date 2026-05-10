@@ -123,3 +123,76 @@ pytest
 - Python 3.12+
 - No external dependencies (standard library only)
 - `pytest` for tests
+
+## Web Application
+
+A Flask + Vue 3 web UI for managing participants and running sorting.
+
+### Requirements
+
+- Python 3.12+
+- Node.js 18+
+
+### Backend setup
+
+```bash
+pip install -r requirements.txt
+python run.py
+```
+
+Runs on http://localhost:5000.
+
+### Frontend setup
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Runs on http://localhost:5173. All `/api` requests are proxied to the backend.
+
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `SECRET_KEY` | `dev-secret-change-in-production` | Flask session signing key |
+| `DATABASE_URL` | `sqlite:///app.db` | SQLAlchemy database URI |
+
+### How to use
+
+1. Open http://localhost:5173 and sign up for an account.
+2. Go to **People** and add participants (name, optional skill, optional photo).
+3. Assign a **rating** (1–10) to each person.
+4. Go to **Sorting** and choose a mode:
+   - **Singles**: ranks all people by rating, highest first.
+   - **Doubles**: pairs people into balanced teams using the tournament pairing engine; requires an even number of people.
+5. Click **Run Sorting** to generate and save the result.
+
+### Docker setup
+
+Requires Docker and Docker Compose.
+
+```bash
+# Build and start both services
+docker compose up --build
+
+# Run in the background
+docker compose up --build -d
+```
+
+- Frontend: http://localhost:8080
+- Backend API: http://localhost:5000
+
+To override environment variables, create a `.env` file in the project root:
+
+```
+SECRET_KEY=your-secret-key
+DATABASE_URL=sqlite:///app.db
+```
+
+Database and uploaded photos are stored in the `backend_instance` Docker volume. To reset all data:
+
+```bash
+docker compose down -v
+```
